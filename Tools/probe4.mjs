@@ -1,0 +1,15 @@
+import { serve, launch } from "./shot.mjs";
+const server = await serve(); const browser = await launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.on("console", m => { const t = m.text(); if (!/^\[(?!error)/.test(t) || /error|Error/.test(t)) console.log("C:", t.slice(0, 300)); });
+await page.goto(`http://127.0.0.1:${server.address().port}/Build/index.html`);
+await page.waitForFunction(() => window.origins && window.origins.frame > 2, null, { timeout: 60000 });
+await page.waitForFunction(() => !document.getElementById("loading"), null, { timeout: 120000 });
+await page.waitForTimeout(1500);
+await page.keyboard.down("Enter"); await page.waitForTimeout(110); await page.keyboard.up("Enter");
+await page.waitForFunction(() => window.origins.data.packages.game.properties.meta.data.mode === "play", null, { timeout: 60000 });
+await page.keyboard.down("KeyM"); await page.waitForTimeout(110); await page.keyboard.up("KeyM");
+await page.waitForTimeout(1500);
+console.log(await page.evaluate(() => { const g = window.origins.data.packages.game.properties.meta.data; return JSON.stringify({ mode: g.mode, tab: g.tab, W: g.mapW, open: g.mapOpen, msg: g.msg, ox: g.mapOX }); }));
+console.log(await page.evaluate(() => { const g = window.origins.data.packages.game; const out = {}; for (const [k, u] of Object.entries(g.utilities || {})) out[k] = JSON.stringify(u.properties.state || {}).slice(0, 600); return JSON.stringify(out); }));
+await browser.close(); server.close();

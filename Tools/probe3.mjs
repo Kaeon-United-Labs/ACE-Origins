@@ -1,0 +1,16 @@
+import { serve, launch } from "./shot.mjs";
+const server = await serve(); const browser = await launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.goto(`http://127.0.0.1:${server.address().port}/Build/index.html`);
+await page.waitForFunction(() => window.origins && window.origins.frame > 2, null, { timeout: 60000 });
+await page.waitForFunction(() => !document.getElementById("loading"), null, { timeout: 120000 });
+await page.waitForTimeout(1200);
+await page.mouse.move(320, 180);
+await page.waitForTimeout(300);
+const get = () => page.evaluate(() => { return JSON.stringify(window.origins.data.packages.engine.utilities.display.properties.state); });
+console.log("move", await get());
+await page.mouse.down(); await page.waitForTimeout(40);
+console.log("down", await get());
+await page.mouse.up(); await page.mouse.wheel(0, 100); await page.waitForTimeout(40);
+console.log("wheel", await get());
+await browser.close(); server.close();

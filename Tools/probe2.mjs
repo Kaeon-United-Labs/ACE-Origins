@@ -1,0 +1,14 @@
+import { serve, launch } from "./shot.mjs";
+const server = await serve(); const browser = await launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.goto(`http://127.0.0.1:${server.address().port}/Build/index.html`);
+await page.waitForFunction(() => window.origins && window.origins.frame > 2, null, { timeout: 60000 });
+await page.waitForFunction(() => !document.getElementById("loading"), null, { timeout: 120000 });
+await page.keyboard.down("Enter"); await page.waitForTimeout(110); await page.keyboard.up("Enter");
+await page.waitForFunction(() => window.origins.data.packages.game.properties.meta.data.mode === "play", null, { timeout: 60000 });
+await page.evaluate(() => { const p = window.origins.data.packages.player.properties.meta.data; p.position = [9500, 150, 0]; p.flying = 1; p.tele = 5; p.yaw = -1.57; p.pitch = 0; window.origins.data.packages.hud.properties.meta.data.enabled = false; });
+await page.waitForTimeout(6000);
+console.log(await page.evaluate(() => { const sc = window.origins.meta.scene; return sc.meshes.filter(m => /cloud|sky/i.test(m.name)).map(m => m.name + ":" + m.isEnabled() + ":" + (m.material && m.material.name)).slice(0, 8).join(" | "); }));
+await page.screenshot({ path: "../../Scratch/thumbs/p2-with.png" });
+console.log(await page.evaluate(() => { const sc = window.origins.meta.scene; const m = sc.getMeshByName('hdrSkyBox').material; const l = sc.getMeshByName('clouds.field'); return JSON.stringify({ alpha: m.alpha, mode: m.transparencyMode, ab: m.needAlphaBlending(), ai: sc.getMeshByName('hdrSkyBox').alphaIndex, cls: m.getClassName(), cloudAB: l.material.needAlphaBlending(), cloudDW: l.material.disableDepthWrite, cloudGrp: l.renderingGroupId, cloudInfo: [l.position.asArray(), l.getBoundingInfo().boundingSphere.radiusWorld] }); }));
+await browser.close(); server.close();

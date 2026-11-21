@@ -1,0 +1,23 @@
+{
+	"name": "angaia-build-tools",
+	"private": true,
+	"type": "module",
+	"description": "Asset pipeline for ACE Origins. npm run all rebuilds everything from the internet; npm run build only re-assembles the document.",
+	"scripts": {
+		"fetch": "node fetch-assets.mjs",
+		"process": "node process-assets.mjs && node process-trees.mjs && node make-audio.mjs",
+		"world": "node generate-world.mjs",
+		"build": "node build.mjs",
+		"serve": "node serve.mjs",
+		"all": "npm run fetch && npm run process && npm run world && npm run build"
+	},
+	"dependencies": {
+		"@gltf-transform/core": "^4.5.1",
+		"@gltf-transform/extensions": "^4.5.1",
+		"@gltf-transform/functions": "^4.5.1",
+		"meshoptimizer": "^1.3.0",
+		"playwright-core": "^1.65.1",
+		"sharp": "^0.35.5",
+		"three": "^0.187.0"
+	}
+}
