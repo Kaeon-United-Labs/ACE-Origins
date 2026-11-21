@@ -657,8 +657,12 @@ const mapParts = {
 	})
 };
 
-P.ui = entity({ space: "camera", position: [0, 0, -OVERLAY], scale: [OVERLAY, OVERLAY, OVERLAY], rotation: [0, 0, 0], ...UI, pois: Object.fromEntries(Object.keys(defs.pois).map(k => [k, 1])) }, null, {
+P.ui = entity({ space: "camera", position: [0, 0, -OVERLAY], scale: [OVERLAY, OVERLAY, OVERLAY], rotation: [0, 0, 0], overlay: OVERLAY, ...UI, pois: Object.fromEntries(Object.keys(defs.pois).map(k => [k, 1])) }, null, {
 	dim: entity({ position: [0, 0, 0.02], enabled: false }, picture("vignette.png", 3.7, 2.1, 10)),
+	cursor: entity({ position: [0, 0, 0.07], enabled: false }, null, {
+		ring: entity({}, iconPic("icon_ring.png", 0.06, 30)),
+		dot: entity({ position: [0, 0, 0.001] }, tinted(0.012, 0.012, [1, 0.92, 0.6, 1], 31))
+	}),
 	title: entity({ position: [0, 0, 0.03], enabled: false }, null, {
 		logo: ltext("ACE ORIGINS", 0.15, [1, 0.86, 0.45, 1], 0, 0.52, 0, { width: 1.6, resolution: 128, font: fontOf("Cinzel", 700, 128) }),
 		rule: entity({ position: [0, 0.425, 0] }, picture("rule.png", 1.1, 0.02, 14))

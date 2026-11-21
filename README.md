@@ -34,6 +34,22 @@ Saves are kept by the browser, so they stay on the machine and the address you p
 
 Add `?detail=0.6` to the address on a slower machine: it pulls the tree and terrain ranges in to 60% (the trees themselves stay).
 
+### In a headset (Quest and other WebXR headsets)
+
+| | Controllers |
+|---|---|
+| Walk / fly | left stick; **left grip** run or boost |
+| Turn | right stick left / right |
+| Rise / sink (flying and swimming) | right stick up / down |
+| Take off / land | left trigger |
+| The two bound actions | right trigger, right grip |
+| **Interact** (talk, take, enter, answer) | **A** |
+| Jump | B |
+| Inventory / map / log | X / Y / left stick click |
+| Menus | point a hand at the menu (a ring shows where) and pull its trigger; or stick up/down and **A**. Grips change tab, **B** resumes |
+| Inventory | X puts the chosen ability on the trigger, Y on the grip, left stick click clears |
+| Map | hold the trigger and move to drag, left stick pans, right stick zooms, trigger on an icon travels, A finds you |
+
 ### The adventure
 
 - **Inventory.** Abilities and things you carry. Select an ability and press **1** to put it on the left mouse button, **2** for the right, **3** to

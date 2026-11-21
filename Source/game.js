@@ -4,9 +4,9 @@
 const G = dat('game'), P = dat('player'), R = dat('rpg'), D = dat('defs');
 const ctlPads = E.packages.controllers.utilities;
 const kbd = ctlPads['keyboard-0'], mouse = ctlPads['pointer-0'];
-const struck = kbd ? kbd.properties.state.pressed : [];
+const struck = kbd ? kbd.properties.state.pressed.slice() : [];       // the keys struck this frame; in a headset, the buttons that stand for them are added below
 const hitK = (...codes) => codes.some(c => struck.indexOf(c) >= 0);
-const clicked = !!mouse && mouse.properties.state.pressed.indexOf('button0') >= 0;
+let clicked = !!mouse && mouse.properties.state.pressed.indexOf('button0') >= 0;
 const disp = E.utilities.display.properties.state;
 const locked = !!(disp.locked || (disp.xr && disp.xr.presenting));
 const now = T.elapsed;
@@ -16,6 +16,78 @@ const copy = o => JSON.parse(JSON.stringify(o || {}));
 const g = {};                                         // what changes in the game's own data this frame
 const setG = (k, v) => { if (G[k] !== v) g[k] = v; };
 let mode = G.mode;
+
+// ---------------------------------------------------------------- the headset
+// Everything the keyboard and mouse do has a button of the controllers. Playing:  left stick walk or fly, right stick turn and rise or sink,
+// left trigger fly / land, right trigger and right grip the two abilities, left grip run or boost, A talk / take / enter, B jump,
+// X inventory, Y map, left stick click the log.  In the menus a hand points at the interface and the trigger clicks; the sticks and
+// buttons do the same for anyone who prefers them (stick choose, grips change tab, A select, B resume, X / Y / stick click bind).
+const headCam = get('player').packages.head.utilities.camera.properties.state;
+const VR = !!(headCam && headCam.presenting);
+const RK = VR ? 'A' : 'R';                                  // the key that talks, takes and answers
+X.vr = VR;
+let vrPtr = null, vrClick = false, vrDown = false, vrRow = null, vrRowClick = null, vrTabHit = -1;
+X.vrPad = { lx: 0, ly: 0, rx: 0, ry: 0 };
+if (VR) try {
+	const sL = ctlPads['xr-controller-left'] ? ctlPads['xr-controller-left'].properties.state : null;
+	const sR = ctlPads['xr-controller-right'] ? ctlPads['xr-controller-right'].properties.state : null;
+	const hd = (s, n) => !!s && s.digital.indexOf(n) >= 0;
+	const ax = (s, n) => s && s.analog ? (s.analog[n] || 0) : 0;
+	const held = { Lt: hd(sL, 'trigger'), Rt: hd(sR, 'trigger'), Lg: hd(sL, 'squeeze'), Rg: hd(sR, 'squeeze'), X: hd(sL, 'a'), Y: hd(sL, 'b'), A: hd(sR, 'a'), B: hd(sR, 'b'), Ls: hd(sL, 'thumbstick'), Rs: hd(sR, 'thumbstick') };
+	const prev = G.vrH || {};
+	const edge = k => held[k] && !prev[k];
+	if (Object.keys(held).some(k => !!held[k] !== !!prev[k])) g.vrH = held;
+	X.vrPad = { lx: ax(sL, 'thumbstick-x'), ly: ax(sL, 'thumbstick-y'), rx: ax(sR, 'thumbstick-x'), ry: ax(sR, 'thumbstick-y') };
+	// the hand that pulled its trigger last is the one that points
+	let hand = G.vrHand || 'right';
+	if (edge('Lt') && sL) hand = 'left'; else if (edge('Rt') && sR) hand = 'right';
+	if (hand !== G.vrHand) g.vrHand = hand;
+	const trig = hand === 'left' ? 'Lt' : 'Rt';
+	vrDown = !!held[trig]; vrClick = edge(trig);
+	// where that hand's ray meets the interface: a plane the overlay's distance in front of the viewer, laid out in tangents (the interface's own units)
+	const ps = hand === 'left' ? (sL && sL.local ? sL : sR) : (sR && sR.local ? sR : sL);
+	if (ps && ps.local && ps.local.direction[2] < -1e-3) {
+		const OV = dat('ui').overlay || 10, o = ps.local.origin, d = ps.local.direction, t = (-OV - o[2]) / d[2];
+		if (t > 0) vrPtr = [(o[0] + t * d[0]) / OV, (o[1] + t * d[1]) / OV];
+	}
+	const mm = G.mode, press = (...c) => c.forEach(k => struck.push(k));
+	// a stick pushed to either end chooses, then repeats
+	const ny = ax(sL, 'thumbstick-y') || ax(sR, 'thumbstick-y'), dir = ny > 0.6 ? 1 : ny < -0.6 ? -1 : 0;
+	const flick = () => {
+		if (dir && (dir !== (G.vrDir || 0) || now >= (G.vrNext || 0))) { press(dir > 0 ? 'ArrowUp' : 'ArrowDown'); g.vrNext = now + (dir !== (G.vrDir || 0) ? 0.45 : 0.16); }
+		if (dir !== (G.vrDir || 0)) g.vrDir = dir;
+	};
+	if (mm === 'play') {
+		if (edge('A')) press('KeyR');
+		if (edge('X')) press('KeyI');
+		if (edge('Y')) press('KeyM');
+		if (edge('Ls')) press('KeyL');
+	} else if (mm === 'talk') {
+		if (edge('A')) press('KeyR');
+		flick();
+	} else if (mm === 'title') {
+		if (edge('A')) press('Enter');
+		flick();
+	} else if (mm === 'menu') {
+		const onMapTab = (G.tab || 0) === 2;
+		if (edge('Lg')) press('KeyQ');
+		if (edge('Rg')) press('KeyE');
+		if (edge('A')) press(onMapTab ? 'KeyR' : 'Enter');
+		if (edge('B')) press('Escape');
+		if (edge('X')) press('Digit1');
+		if (edge('Y')) press('Digit2');
+		if (edge('Ls')) press('Digit3');
+		if (!onMapTab) flick();
+	}
+	// pointing at the list, or at a tab
+	if (vrPtr && (mm === 'title' || mm === 'menu')) {
+		const UIc = dat('ui'), u = vrPtr[0], v = vrPtr[1], i = Math.round((UIc.top - v) / UIc.step);
+		if (u > -1.06 && u < -0.34 && i >= 0 && i < UIc.rows && Math.abs(UIc.top - i * UIc.step - v) < UIc.step / 2) vrRow = i;
+		if (mm === 'menu' && v > 0.47 && v < 0.58) for (let k = 0; k < 4; k++) if (Math.abs(u - UIc.tabX[k]) < 0.24) vrTabHit = k;
+		if (vrClick) vrRowClick = vrRow;
+	}
+	if (mm === 'talk' && vrClick) clicked = true;
+} catch (e) { g.vrErr = String(e && e.message); }
 
 // working copies of the adventure's state; written back only if something changed
 let inv = copy(R.inv), bind = copy(R.bind), q = copy(R.q), flags = copy(R.flags), found = copy(R.found), kills = copy(R.kills);
@@ -166,6 +238,12 @@ const newGame = () => {
 // ---------------------------------------------------------------- the interface's views, built per mode
 const nav = (n) => {
 	let sel = G.sel || 0;
+	// a hand that moves onto a row chooses it; the trigger on a row uses it
+	if (VR) {
+		const seen = vrRow !== null && vrRow < n ? vrRow : -1;
+		if (seen !== (G.vrRowSeen === undefined ? -1 : G.vrRowSeen)) { g.vrRowSeen = seen; if (seen >= 0 && seen !== sel) { sel = seen; sfx('click'); } }
+		if (vrRowClick !== null && vrRowClick < n) { sel = vrRowClick; struck.push('Enter'); }
+	}
 	if (hitK('ArrowDown', 'KeyS')) { sel = (sel + 1) % Math.max(1, n); sfx('click'); }
 	if (hitK('ArrowUp', 'KeyW')) { sel = (sel + n - 1) % Math.max(1, n); sfx('click'); }
 	return clamp(sel, 0, Math.max(0, n - 1));
@@ -180,9 +258,9 @@ const inventoryRows = () => {
 		const it = D.items[id];
 		if (it.type === 'ability') {
 			const m = bindMark(id);
-			rows.push({ id, label: it.name + (m ? '      [' + (m === 'LR' ? 'LMB RMB' : m === 'L' ? 'LMB' : 'RMB') + ']' : ''), detail: it.name + '\n\n' + it.desc + '\n\nPress 1 to place it on the left mouse button, 2 for the right, 3 to clear it.' });
+			rows.push({ id, label: it.name + (m ? '      [' + (VR ? (m === 'LR' ? 'TRIGGER GRIP' : m === 'L' ? 'TRIGGER' : 'GRIP') : (m === 'LR' ? 'LMB RMB' : m === 'L' ? 'LMB' : 'RMB')) + ']' : ''), detail: it.name + '\n\n' + it.desc + '\n\n' + (VR ? 'Press X to place it on the trigger, Y for the grip, left stick click to clear it.' : 'Press 1 to place it on the left mouse button, 2 for the right, 3 to clear it.') });
 		} else {
-			rows.push({ id, label: it.name + '      x' + inv[id], detail: it.name + '\n\n' + it.desc + (it.heal ? '\n\nPress Enter to use it.' : '') });
+			rows.push({ id, label: it.name + '      x' + inv[id], detail: it.name + '\n\n' + it.desc + (it.heal ? '\n\n' + (VR ? 'Press A, or pull the trigger on it, to use it.' : 'Press Enter to use it.') : '') });
 		}
 	}
 	return rows;
@@ -218,6 +296,7 @@ const systemRows = () => {
 	return rows;
 };
 const CONTROLS = 'WASD  move or fly\nMouse  look\nShift  run, or boost in flight\nSpace  jump, take off, or rise\nQ / Ctrl  descend\nF  take off or land\nE  talk to people and take things\nLeft / right mouse  the two actions you have bound\nI  inventory    L  log (quests and the defeated)    M  map\nEsc  pause';
+const CONTROLS_VR = 'Left stick  walk or fly\nRight stick  turn; up and down to rise and sink\nLeft grip  run, or boost in flight\nLeft trigger  take off or land\nRight trigger and right grip  the two actions you have bound\nA  talk, take, enter    B  jump\nX  inventory    Y  map    left stick click  log\nIn menus: point and pull the trigger, or stick and A    grips  change tab    B  back';
 const titleRows = () => {
 	const rows = [];
 	let latest = null;
@@ -225,13 +304,13 @@ const titleRows = () => {
 	if (latest) rows.push({ label: 'Continue', act: 'load', n: latest.n, detail: slotName(latest.n) + '\n' + describe(latest.s) });
 	rows.push({ label: 'New game', act: 'new', detail: 'Begin again at Maren\'s camp.' });
 	for (const n of SLOTS) { const s = readSlot(n); if (s) rows.push({ label: 'Load    ' + slotName(n), act: 'load', n, detail: describe(s) }); }
-	rows.push({ label: 'Controls', act: 'none', detail: CONTROLS });
+	rows.push({ label: 'Controls', act: 'none', detail: VR ? CONTROLS_VR : CONTROLS });
 	return rows;
 };
 
 // A place is loaded behind a screen of its own: the player is put where they are going, the world streams in around them, and play begins when it
 // has (every model and texture there, nothing left waiting to be made) and not before.
-const TIPS = ['Moonapples glow in the grass.', 'R speaks to people and takes things.', 'Q and E take you down and up. F takes you off and lands you.', 'The left and right mouse buttons do what the inventory says.', 'Deep water holds sharks, and they mind their own business.', 'Dragons keep to the high peaks.'];
+const TIPS = ['Moonapples glow in the grass.', VR ? 'A speaks to people and takes things.' : 'R speaks to people and takes things.', VR ? 'The right stick rises and sinks. The left trigger takes you off and lands you.' : 'Q and E take you down and up. F takes you off and lands you.', VR ? 'The right trigger and grip do what the inventory says.' : 'The left and right mouse buttons do what the inventory says.', 'Deep water holds sharks, and they mind their own business.', 'Dragons keep to the high peaks.'];
 const beginLoading = label => { mode = 'loading'; g.loadFrom = T.frame; g.loadLabel = label; g.loadTipN = Math.floor(hash(now * 7 + T.frame) * TIPS.length); };
 // through a door, in or out: the player is put on the other side, and the place behind them is switched off
 const warp = t => {
@@ -273,7 +352,7 @@ if (mode === 'play') {
 		if (d < t.radius && d < best) { best = d; target = t; }
 	}
 }
-const promptFor = t => !t ? '' : t.kind === 'door' ? '[R]  Enter ' + t.name : t.kind === 'npc' ? '[R]  Talk to ' + t.name : t.kind === 'stone' ? '[R]  Touch the ' + t.name : '[R]  Take ' + t.name;
+const promptFor = t => !t ? '' : t.kind === 'door' ? '[' + RK + ']  Enter ' + t.name : t.kind === 'npc' ? '[' + RK + ']  Talk to ' + t.name : t.kind === 'stone' ? '[' + RK + ']  Touch the ' + t.name : '[' + RK + ']  Take ' + t.name;
 setG('interact', promptFor(target));
 
 // locations come to be known by going near them
@@ -303,13 +382,14 @@ if (mode === 'title') {
 		if (r.act === 'new') { newGame(); beginLoading('Beginning'); }
 		else if (r.act === 'load') { loadSnapshot(readSlot(r.n)); beginLoading('Loading ' + slotName(r.n)); }
 	}
-	X.view = { title: true, rows: rows.map(r => r.label), sel, detail: (rows[sel] || {}).detail || '', footer: 'W / S  choose        ENTER  select' };
+	X.view = { title: true, rows: rows.map(r => r.label), sel, detail: (rows[sel] || {}).detail || '', footer: VR ? 'Point and pull the trigger        or stick to choose and A to select' : 'W / S  choose        ENTER  select' };
 
 } else if (mode === 'menu') {
 	let tab = G.tab || 0;
 	const onMap = tab === 2;                                    // on the map the movement keys pan it, so only Q and E change the tab
 	if (onMap ? hitK('KeyE') : hitK('ArrowRight', 'KeyD', 'KeyE')) { tab = (tab + 1) % 4; g.tab = tab; g.sel = 0; sfx('click'); }
 	if (onMap ? hitK('KeyQ') : hitK('ArrowLeft', 'KeyA', 'KeyQ')) { tab = (tab + 3) % 4; g.tab = tab; g.sel = 0; sfx('click'); }
+	if (VR && vrClick && vrTabHit >= 0 && vrTabHit !== tab) { tab = vrTabHit; g.tab = tab; g.sel = 0; sfx('click'); }
 	if (hitK('KeyI')) { if (tab === 0) { enterPlay(); } else { tab = 0; g.tab = 0; g.sel = 0; sfx('click'); } }
 	if (hitK('KeyL')) { if (tab === 1) { enterPlay(); } else { tab = 1; g.tab = 1; g.sel = 0; sfx('click'); } }
 	if (hitK('KeyM')) { if (tab === 2) { enterPlay(); } else { tab = 2; g.tab = 2; g.sel = 0; sfx('click'); } }
@@ -319,7 +399,7 @@ if (mode === 'title') {
 	const sel = tab !== (G.tab || 0) ? 0 : nav(rows.length);
 	setG('sel', sel);
 	const cur = rows[sel];
-	let footer = 'Q / E  change tab        W / S  choose        ESC  resume';
+	let footer = VR ? 'Grips  change tab        Stick or pointer  choose        A  select        B  resume' : 'Q / E  change tab        W / S  choose        ESC  resume';
 
 	if (tab === 0 && cur) {
 		const it = D.items[cur.id];
@@ -332,7 +412,7 @@ if (mode === 'title') {
 			if (hitK('Digit1', 'Numpad1')) setSlot('l');
 			if (hitK('Digit2', 'Numpad2')) setSlot('r');
 			if (hitK('Digit3', 'Numpad3')) { if (bind.l === cur.id) bind.l = ''; if (bind.r === cur.id) bind.r = ''; dirty = true; sfx('click'); }
-			footer = '1  left mouse        2  right mouse        3  clear        Q / E  tab';
+			footer = VR ? 'X  trigger        Y  grip        Stick click  clear        Grips  tab' : '1  left mouse        2  right mouse        3  clear        Q / E  tab';
 		} else if (it.heal && hitK('Enter', 'Space')) {
 			if (P.health < P.maxHealth - 0.5) {
 				inv[cur.id] -= 1; dirty = true; sfx('pickup');
@@ -345,10 +425,11 @@ if (mode === 'title') {
 	let mapView = null;
 	if (tab === 2) try {
 		const MV = dat('ui').mapv, held = c => !!kbd && kbd.properties.state.digital.indexOf(c) >= 0;
-		const an = mouse ? mouse.properties.state.analog : { x: 0.5, y: 0.5, wheel: 0 };
-		const down = !!mouse && mouse.properties.state.digital.indexOf('button0') >= 0;
+		const aspect = VR ? 16 / 9 : (disp.aspect || 16 / 9), halfH = Math.tan(0.56), halfW = halfH * aspect;
+		const an = VR ? { x: vrPtr ? vrPtr[0] / (2 * halfW) + 0.5 : (G.mapLX !== undefined ? G.mapLX : 0.5), y: vrPtr ? vrPtr[1] / (2 * halfH) + 0.5 : (G.mapLY !== undefined ? G.mapLY : 0.5), wheel: 0 }
+			: (mouse ? mouse.properties.state.analog : { x: 0.5, y: 0.5, wheel: 0 });
+		const down = VR ? (vrDown && !!vrPtr) : (!!mouse && mouse.properties.state.digital.indexOf('button0') >= 0);
 		const pressed = down && !G.mapDown, released = !down && !!G.mapDown;      // edges worked out here: the held list is reliable, the edge lists are only there for a frame
-		const aspect = disp.aspect || 16 / 9, halfH = Math.tan(0.56), halfW = halfH * aspect;
 		const fit = Math.min(1, (2 * halfW - 0.08) / (MV.w + 0.06));          // a narrow screen shrinks the window to fit
 		const regW = MV.x1 - MV.x0, regH = MV.z1 - MV.z0, ratio = MV.h / MV.w;
 		const hereP = AREA !== 'overworld' ? G.ret.pos : P.position, hereYaw = AREA !== 'overworld' ? G.ret.yaw : P.yaw;
@@ -363,6 +444,7 @@ if (mode === 'title') {
 		if (inside && Math.abs(an.wheel) > 0.01) zoom = an.wheel > 0 ? 1.25 : 1 / 1.25;
 		if (held('Equal') || held('NumpadAdd')) zoom = Math.pow(1 / 1.9, DT);
 		if (held('Minus') || held('NumpadSubtract')) zoom = Math.pow(1.9, DT);
+		if (VR && Math.abs(X.vrPad.ry) > 0.1) zoom = Math.pow(1.9, -X.vrPad.ry * DT);
 		if (zoom !== 1) {
 			const ax = zoom !== 1 && (Math.abs(an.wheel) > 0.01) && inside ? ux : 0, ay = (Math.abs(an.wheel) > 0.01) && inside ? uy : 0;
 			const mpu = W / MV.w;                                              // metres per unit now
@@ -377,6 +459,7 @@ if (mode === 'title') {
 		if (held('KeyD') || held('ArrowRight')) cx += pan;
 		if (held('KeyW') || held('ArrowUp')) cz += pan;
 		if (held('KeyS') || held('ArrowDown')) cz -= pan;
+		if (VR) { cx += X.vrPad.lx * pan; cz += X.vrPad.ly * pan; }
 		if (hitK('KeyR')) { cx = hereP[0]; cz = hereP[2]; sfx('click'); }
 		clampView();
 		const toL = (x, z) => [(x - cx) / W * MV.w, (z - cz) / W * MV.w];
@@ -396,7 +479,8 @@ if (mode === 'title') {
 		g.mapLX = an.x; g.mapLY = an.y;
 		if (W !== G.mapW) g.mapW = W; if (cx !== G.mapCx) g.mapCx = cx; if (cz !== G.mapCz) g.mapCz = cz;
 		mapView = { W, cx, cz, fit, hover, ptr: [ux, uy], inside, you: [hereP[0], hereP[2], hereYaw], found, away: AREA !== 'overworld', dragging: down && G.mapDown };
-		footer = 'Drag  pan        Wheel  zoom        Click an icon  travel        R  find yourself        Q / E  tab';
+		footer = VR ? 'Hold the trigger  drag        Left stick  pan        Right stick  zoom        Trigger on an icon  travel        A  find yourself        B  close'
+			: 'Drag  pan        Wheel  zoom        Click an icon  travel        R  find yourself        Q / E  tab';
 	} catch (e) { g.mapErr = String(e && e.message); }
 	if (tab === 3 && cur && hitK('Enter', 'Space')) {
 		sfx('click');
@@ -406,7 +490,7 @@ if (mode === 'title') {
 		else if (cur.act === 'title') { mode = 'title'; g.sel = 0; }
 	}
 
-	const binds = 'LEFT MOUSE:  ' + itemName(bind.l) + (bind.l ? '' : 'nothing') + '        RIGHT MOUSE:  ' + (bind.r ? itemName(bind.r) : 'nothing');
+	const binds = (VR ? 'TRIGGER:  ' : 'LEFT MOUSE:  ') + itemName(bind.l) + (bind.l ? '' : 'nothing') + (VR ? '        GRIP:  ' : '        RIGHT MOUSE:  ') + (bind.r ? itemName(bind.r) : 'nothing');
 	X.view = { tab, tabs: true, rows: rows.map(r => r.label), sel: Math.min(sel, rows.length - 1), detail: cur ? cur.detail : (tab === 0 ? 'Nothing carried.' : ''), footer, bindline: tab === 0 ? binds : '', map: tab === 2, mapView };
 
 } else if (mode === 'loading') {
@@ -433,7 +517,7 @@ if (mode === 'title') {
 		}
 		const line = g.talkLine !== undefined ? g.talkLine : G.talkLine;
 		text = entry.say[Math.min(line, entry.say.length - 1)];
-		hint = (line < entry.say.length - 1 || ask ? '[R]  continue' : '[R]  end') + '   ' + (line + 1) + ' / ' + entry.say.length;
+		hint = (line < entry.say.length - 1 || ask ? '[' + RK + ']  continue' : '[' + RK + ']  end') + '   ' + (line + 1) + ' / ' + entry.say.length;
 	} else if (phase === 'ask') {
 		const qn = ask[G.askIdx], n = qn.opts.length;
 		let s2 = G.askSel || 0;
@@ -446,7 +530,7 @@ if (mode === 'title') {
 			g.talkPhase = 'reply'; g.askText = o.reply; speak(npcDef, o.reply); sfx('click');
 		}
 		text = qn.q; options = qn.opts.map(o => o.t); sel = s2;
-		hint = 'W / S  choose        R  answer        question ' + (G.askIdx + 1) + ' / ' + ask.length;
+		hint = (VR ? 'Stick  choose        A  answer        question ' : 'W / S  choose        R  answer        question ') + (G.askIdx + 1) + ' / ' + ask.length;
 	} else if (phase === 'reply') {
 		if (advance) {
 			if (G.askIdx < ask.length - 1) { g.askIdx = G.askIdx + 1; g.askSel = 0; g.talkPhase = 'ask'; speak(npcDef, ask[G.askIdx + 1].q); sfx('click'); }
@@ -459,7 +543,7 @@ if (mode === 'title') {
 				else finish();
 			}
 		}
-		text = G.askText; hint = '[R]  continue';
+		text = G.askText; hint = '[' + RK + ']  continue';
 	} else {
 		const lines = (entry.endings || {})[G.endKey] || [''];
 		if (advance) {
@@ -467,7 +551,7 @@ if (mode === 'title') {
 			else finish();
 		}
 		const line = g.talkLine !== undefined ? g.talkLine : G.talkLine;
-		text = lines[Math.min(line, lines.length - 1)]; hint = line < lines.length - 1 ? '[R]  continue' : '[R]  end';
+		text = lines[Math.min(line, lines.length - 1)]; hint = line < lines.length - 1 ? '[' + RK + ']  continue' : '[' + RK + ']  end';
 	}
 	X.talk = { speaker: npcDef.name, text, hint, options, sel };
 
@@ -553,4 +637,5 @@ const curTime = E.utilities.time.properties.data || {}, curDisplay = E.utilities
 if (curTime.scale !== wantScale || curDisplay.cursor !== wantCursor) {
 	node('engine').utilities = { time: { properties: { data: { scale: wantScale } } }, display: { properties: { data: { cursor: wantCursor } } } };
 }
+X.cursor = VR && vrPtr && (mode === 'title' || mode === 'menu') ? vrPtr : null;
 X.mode = mode;

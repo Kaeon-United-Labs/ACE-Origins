@@ -4546,6 +4546,31 @@
 							origin: array3(context.meta.ray.origin),
 							direction: array3(context.meta.ray.direction)
 						};
+
+						/*
+
+							The same ray in the frame of the entity the view hangs
+							off, which is the frame a camera-space entity (a menu,
+							a heads-up display) is laid out in. A document aims at
+							its own interface with this, whatever the headset's
+							reference space has been moved to.
+
+						*/
+						let view = viewNode(context);
+
+						if(view != null) {
+
+							view.computeWorldMatrix(true);
+
+							let inverse = BABYLON.Matrix.Invert(view.getWorldMatrix());
+
+							controller.local = {
+								origin: array3(BABYLON.Vector3.TransformCoordinates(
+									context.meta.ray.origin, inverse)),
+								direction: array3(BABYLON.Vector3.TransformNormal(
+									context.meta.ray.direction, inverse))
+							};
+						}
 					}
 				});
 			}

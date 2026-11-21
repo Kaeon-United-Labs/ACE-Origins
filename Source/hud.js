@@ -23,7 +23,7 @@ const old = hud.packages.flash.utilities.mat.properties.data.color[3];
 if (Math.abs(old - flash) > 0.01) comp('hud.flash', 'mat', { color: [0.8, 0.02, 0.02, flash] });
 
 // the abilities on the two mouse buttons, and how long until each is ready again
-for (const [side, key, mouse] of [['l', 'L', 'LMB'], ['r', 'R', 'RMB']]) {
+for (const [side, key, mouse] of X.vr ? [['l', 'L', 'TRIGGER'], ['r', 'R', 'GRIP']] : [['l', 'L', 'LMB'], ['r', 'R', 'RMB']]) {
 	const id = (R.bind || {})[side], ab = id ? DEF.abilities[id] : null;
 	const left = id ? (R.cd || {})[id] || 0 : 0;
 	const frac = ab ? clamp(left / ab.cool, 0, 1) : 0;

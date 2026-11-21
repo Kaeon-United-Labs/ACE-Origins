@@ -57,7 +57,8 @@ if (play) {
 		wantBoost = held(L, 'squeeze');
 		fire = held(R, 'trigger');
 		fireR = held(R, 'squeeze');
-		toggle = tapped(L, 'trigger');
+		toggle = tapped(L, 'trigger') && !inRoom;
+		jump = tapped(R, 'b') && T.frame - (GAME.playFrom || 0) > 6;   // not the press that has just closed a menu
 	} else {
 		ahead = (on('KeyW') || on('ArrowUp') ? 1 : 0) - (on('KeyS') || on('ArrowDown') ? 1 : 0);
 		aside = (on('KeyD') || on('ArrowRight') ? 1 : 0) - (on('KeyA') || on('ArrowLeft') ? 1 : 0);
