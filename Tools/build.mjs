@@ -93,6 +93,20 @@ P.world = entity({}, {
 			// the finish: glow round the very bright, smoothed edges, then a filmic curve with cool shadows and warm highlights
 			finish: { bloom: { threshold: 0.84, weight: 0.34, kernel: 64, scale: 0.5 }, fxaa: true, grade: { exposure: 0.86, saturation: 0.9, contrast: 1.1, shadows: [0.94, 1.0, 1.05], highlights: [1.04, 1.0, 0.95], vignette: 0.24, sharpen: 0.3 } }
 		},
+		// what this game asks of its page (the page itself knows nothing of any game)
+		boot: {
+			title: "ACE Origins",
+			fonts: [
+				{ family: "Cinzel", src: "Assets/Fonts/Cinzel.woff2", weight: "400 900" },
+				{ family: "Lato", src: "Assets/Fonts/Lato-Regular.woff2", weight: "400" },
+				{ family: "Lato", src: "Assets/Fonts/Lato-Bold.woff2", weight: "700" }
+			],
+			loading: {
+				title: "ACE ORIGINS", status: "making the world", ready: "almost there", titleFont: "Cinzel", bodyFont: "Lato",
+				background: "radial-gradient(ellipse at center, #121a2c 0%, #070a12 75%)", color: "#f0c868", muted: "#aeb8cc", track: "#1a2338",
+				bar: "linear-gradient(90deg, #8a6a2c, #f6d27a)", minimum: 3, timeout: 60
+			}
+		},
 		requires: []
 	})
 });
@@ -729,84 +743,5 @@ console.log("document", Math.round(fs.statSync(path.join(build, "ACE Origins.jso
 fs.mkdirSync(path.join(build, "Engine"), { recursive: true });
 for (const f of ["ace.js", "aceOperators.js", "aceWorld.js"]) fs.copyFileSync(path.join(engineSrc, f), path.join(build, "Engine", f));
 
-fs.writeFileSync(path.join(build, "index.html"), `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>ACE Origins</title>
-	<link rel="icon" href="data:,">
-	<style>
-		@font-face { font-family: "Cinzel"; src: url("Assets/Fonts/Cinzel.woff2") format("woff2"); font-weight: 400 900; }
-		@font-face { font-family: "Lato"; src: url("Assets/Fonts/Lato-Regular.woff2") format("woff2"); font-weight: 400; }
-		@font-face { font-family: "Lato"; src: url("Assets/Fonts/Lato-Bold.woff2") format("woff2"); font-weight: 700; }
-		html, body { margin: 0; height: 100%; background: #0b0f16; overflow: hidden; }
-		#stage { position: absolute; inset: 0; }
-		#loading { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; flex-direction: column;
-			background: radial-gradient(ellipse at center, #121a2c 0%, #070a12 75%); color: #f0c868; font: 700 clamp(28px, 5vw, 64px)/1.1 "Cinzel", serif; letter-spacing: .1em; pointer-events: none; }
-		#loading small { font: 400 15px/1.5 "Lato", system-ui, sans-serif; letter-spacing: .08em; color: #aeb8cc; margin-top: 1.4em; }
-		#track { width: min(320px, 60vw); height: 3px; background: #1a2338; margin-top: 1em; border-radius: 2px; overflow: hidden; }
-		#bar { height: 100%; width: 0; background: linear-gradient(90deg, #8a6a2c, #f6d27a); transition: width .3s; }
-	</style>
-</head>
-<body>
-	<div id="stage"></div>
-	<div id="loading">ACE ORIGINS<div id="track"><div id="bar"></div></div><small id="status">loading the world…</small></div>
-
-	<script src="https://cdn.babylonjs.com/v7.54.3/babylon.js"></script>
-	<script src="https://cdn.babylonjs.com/v7.54.3/loaders/babylonjs.loaders.min.js"></script>
-	<script src="Engine/ace.js"></script>
-	<script src="Engine/aceOperators.js"></script>
-	<script src="Engine/aceWorld.js"></script>
-	<script>
-		// the text in the world is drawn once, in whatever face is there at the time, so the faces are loaded first
-		Promise.all([document.fonts.load('700 40px "Cinzel"'), document.fonts.load('400 40px "Lato"'), document.fonts.load('700 40px "Lato"')])
-		.catch(() => { })
-		.then(() => fetch("ACE Origins.json")).then(response => response.json()).then(scene => {
-			// ?detail=0.6 pulls every tree and terrain range in to 60% for a slower machine; the trees are never removed
-			if (new URLSearchParams(location.search).get("post") === "0") delete scene.packages.world.utilities.settings.properties.data.post.finish;
-			// a headset draws everything twice and has a small GPU: on a Quest the ranges start at half and the picture at 70% of the device's own resolution (?detail= and ?xrscale= override)
-			const quest = /OculusBrowser|Quest/i.test(navigator.userAgent), params = new URLSearchParams(location.search);
-			const camera = scene.packages.player.packages.head.utilities.camera.properties.data;
-			const xrscale = parseFloat(params.get("xrscale")) || (quest ? 0.7 : null);
-			if (xrscale && camera.xr) camera.xr.scale = xrscale;
-			const detail = params.has("detail") ? parseFloat(params.get("detail")) : (quest ? 0.5 : 1);
-			if (detail > 0 && detail !== 1) {
-				const scale = lods => lods.forEach(l => { if (l.range < 1e8) l.range *= detail; });
-				const walk = pkg => { Object.values(pkg.utilities || {}).forEach(u => { const d = u.properties && u.properties.data; if (d && Array.isArray(d.lods) && (u.properties.tags || []).some(t => t === "scatter" || t === "terrain")) scale(d.lods); }); Object.values(pkg.packages || {}).forEach(walk); };
-				walk(scene);
-			}
-			const context = ace.run("#stage", scene);
-			window.origins = window.angaia = context;
-				window.addEventListener('contextmenu', event => event.preventDefault());
-			const status = document.getElementById("status"), overlay = document.getElementById("loading");
-			// The cover stays solid until the world is made: the terrain is there, every model and texture has arrived, nothing is waiting to be built,
-			// and that has held for two seconds. Until then the player sees this and nothing of the world, not even a cloud.
-			const bar = document.getElementById("bar"), started = performance.now();
-			let quiet = 0;
-			const timer = setInterval(() => {
-				let total = 0, done = 0, waiting = 0;
-				for (const id of Object.keys(context.state)) {
-					const st = context.state[id];
-					if (!st || typeof st !== "object") continue;
-					if (st.loaded !== undefined) { total++; if (st.loaded === true) done++; else waiting++; }
-					if (st.queued > 0) waiting++;
-					if (st.error) status.textContent = "problem: " + st.error;
-				}
-				const terrain = context.resolved.components.find(c => c.type === "terrain");
-				const tState = terrain && context.instances[ace.identity(terrain)] ? context.state[ace.identity(terrain)] : null;
-				const ready = tState && tState.loaded && context.frame > 120 && waiting === 0;
-				quiet = ready ? quiet + 1 : 0;
-				if (total > 0) bar.style.width = Math.round(100 * done / total) + "%";
-				status.textContent = ready ? "almost there" : "making the world  " + done + " of " + total;
-				if ((quiet >= 8 && performance.now() - started > 3000) || performance.now() - started > 60000) {
-					overlay.style.transition = "opacity 1.2s"; overlay.style.opacity = 0; clearInterval(timer);
-					setTimeout(() => overlay.remove(), 1400);
-				}
-			}, 250);
-		});
-	</script>
-</body>
-</html>
-`);
+fs.writeFileSync(path.join(build, "index.html"), read("page.html"));
 console.log("page written");

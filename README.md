@@ -105,3 +105,9 @@ with *Build command* empty (or `echo ok`) and *Publish directory* `.`. Open the 
 
 The code is under the [Apache License 2.0](LICENSE) (see also [NOTICE](NOTICE)). The files in `Assets/` are third-party works under their
 own licences, listed in [Assets/CREDITS.md](Assets/CREDITS.md); the Apache licence does not apply to them.
+
+## Running other ACE documents
+
+`index.html` is generic: `?game=path/to/file.json` runs any ACE document (default `ACE Origins.json`). It starts a document at once, with no cover.
+What a document wants of its page it says in `world.settings.data.boot`: `title`, `fonts` (loaded before the world is made) and `loading`
+(a cover with its own title, colours and fonts, shown until the world is made; leave it out for none). cannon.js is fetched only for a document that sets gravity.

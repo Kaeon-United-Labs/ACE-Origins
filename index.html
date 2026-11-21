@@ -3,24 +3,15 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>ACE Origins</title>
+	<title>ACE</title>
 	<link rel="icon" href="data:,">
 	<style>
-		@font-face { font-family: "Cinzel"; src: url("Assets/Fonts/Cinzel.woff2") format("woff2"); font-weight: 400 900; }
-		@font-face { font-family: "Lato"; src: url("Assets/Fonts/Lato-Regular.woff2") format("woff2"); font-weight: 400; }
-		@font-face { font-family: "Lato"; src: url("Assets/Fonts/Lato-Bold.woff2") format("woff2"); font-weight: 700; }
-		html, body { margin: 0; height: 100%; background: #0b0f16; overflow: hidden; }
+		html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 		#stage { position: absolute; inset: 0; }
-		#loading { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; flex-direction: column;
-			background: radial-gradient(ellipse at center, #121a2c 0%, #070a12 75%); color: #f0c868; font: 700 clamp(28px, 5vw, 64px)/1.1 "Cinzel", serif; letter-spacing: .1em; pointer-events: none; }
-		#loading small { font: 400 15px/1.5 "Lato", system-ui, sans-serif; letter-spacing: .08em; color: #aeb8cc; margin-top: 1.4em; }
-		#track { width: min(320px, 60vw); height: 3px; background: #1a2338; margin-top: 1em; border-radius: 2px; overflow: hidden; }
-		#bar { height: 100%; width: 0; background: linear-gradient(90deg, #8a6a2c, #f6d27a); transition: width .3s; }
 	</style>
 </head>
 <body>
 	<div id="stage"></div>
-	<div id="loading">ACE ORIGINS<div id="track"><div id="bar"></div></div><small id="status">loading the world…</small></div>
 
 	<script src="https://cdn.babylonjs.com/v7.54.3/babylon.js"></script>
 	<script src="https://cdn.babylonjs.com/v7.54.3/loaders/babylonjs.loaders.min.js"></script>
@@ -28,30 +19,61 @@
 	<script src="Engine/aceOperators.js"></script>
 	<script src="Engine/aceWorld.js"></script>
 	<script>
-		// the text in the world is drawn once, in whatever face is there at the time, so the faces are loaded first
-		Promise.all([document.fonts.load('700 40px "Cinzel"'), document.fonts.load('400 40px "Lato"'), document.fonts.load('700 40px "Lato"')])
-		.catch(() => { })
-		.then(() => fetch("ACE Origins.json")).then(response => response.json()).then(scene => {
-			// ?detail=0.6 pulls every tree and terrain range in to 60% for a slower machine; the trees are never removed
-			if (new URLSearchParams(location.search).get("post") === "0") delete scene.packages.world.utilities.settings.properties.data.post.finish;
-			// a headset draws everything twice and has a small GPU: on a Quest the ranges start at half and the picture at 70% of the device's own resolution (?detail= and ?xrscale= override)
-			const quest = /OculusBrowser|Quest/i.test(navigator.userAgent), params = new URLSearchParams(location.search);
-			const camera = scene.packages.player.packages.head.utilities.camera.properties.data;
+		// A page that runs any ACE document: ?game=file.json names it (default "ACE Origins.json"). Nothing here belongs to one game.
+		// What a document wants of its page it says itself, in world.settings.data.boot:
+		//   title    the page's title
+		//   fonts    [{ family, src, weight }], loaded before the world is made (text in the world is drawn once, in whatever face is there then)
+		//   loading  a cover shown until the world is made. { title, status, ready, background, color, muted, track, bar, titleFont, bodyFont, minimum, timeout }
+		//            absent: no cover, the document just starts
+		// Physics (cannon.js) is fetched only for a document that asks for gravity, which is when the adapter would use it.
+		const params = new URLSearchParams(location.search);
+		const load = src => new Promise(resolve => { const s = document.createElement("script"); s.src = src; s.onload = s.onerror = () => resolve(); document.head.appendChild(s); });
+		const make = (tag, css, text) => { const e = document.createElement(tag); if (css) e.style.cssText = css; if (text) e.textContent = text; return e; };
+
+		fetch(params.get("game") || "ACE Origins.json").then(response => response.json()).then(async scene => {
+			const settings = (((scene.packages || {}).world || {}).utilities || {}).settings;
+			const data = settings && settings.properties && settings.properties.data ? settings.properties.data : {};
+			const boot = data.boot || {};
+			if (boot.title) document.title = boot.title;
+
+			await Promise.all((boot.fonts || []).map(f => { try { const face = new FontFace(f.family, "url(" + f.src + ")", { weight: f.weight || "400" }); return face.load().then(l => document.fonts.add(l)).catch(() => { }); } catch (e) { return null; } }));
+			if (data.gravity != null && typeof CANNON === "undefined") await load("https://cdn.babylonjs.com/cannon.js");
+
+			// the cover, if the document asks for one
+			let overlay = null, bar = null, status = null;
+			const L = boot.loading;
+			if (L) {
+				overlay = make("div", "position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;letter-spacing:.1em;line-height:1.1;font-weight:700;font-size:clamp(28px,5vw,64px);" +
+					"background:" + (L.background || "#000") + ";color:" + (L.color || "#fff") + ";font-family:" + (L.titleFont ? '"' + L.titleFont + '",' : "") + "serif", L.title || "");
+				const track = make("div", "width:min(320px,60vw);height:3px;margin-top:1em;border-radius:2px;overflow:hidden;background:" + (L.track || "#333"));
+				bar = make("div", "height:100%;width:0;transition:width .3s;background:" + (L.bar || L.color || "#fff"));
+				track.appendChild(bar);
+				status = make("small", "font-weight:400;font-size:15px;line-height:1.5;letter-spacing:.08em;margin-top:1.4em;color:" + (L.muted || L.color || "#aaa") + ";font-family:" + (L.bodyFont ? '"' + L.bodyFont + '",' : "") + "system-ui,sans-serif", L.status || "");
+				overlay.appendChild(track); overlay.appendChild(status);
+				overlay.id = "loading"; document.body.appendChild(overlay);
+			}
+
+			// a slower machine, or a headset (which draws everything twice and has a small GPU), pulls every tree and terrain range in: ?detail= and ?xrscale= override
+			const quest = /OculusBrowser|Quest/i.test(navigator.userAgent);
+			if (params.get("post") === "0") { try { delete data.post.finish; } catch (e) { } }
+			const camera = (((scene.packages.player || {}).packages || {}).head || {}).utilities;
 			const xrscale = parseFloat(params.get("xrscale")) || (quest ? 0.7 : null);
-			if (xrscale && camera.xr) camera.xr.scale = xrscale;
+			if (xrscale && camera && camera.camera && camera.camera.properties.data.xr) camera.camera.properties.data.xr.scale = xrscale;
 			const detail = params.has("detail") ? parseFloat(params.get("detail")) : (quest ? 0.5 : 1);
 			if (detail > 0 && detail !== 1) {
 				const scale = lods => lods.forEach(l => { if (l.range < 1e8) l.range *= detail; });
 				const walk = pkg => { Object.values(pkg.utilities || {}).forEach(u => { const d = u.properties && u.properties.data; if (d && Array.isArray(d.lods) && (u.properties.tags || []).some(t => t === "scatter" || t === "terrain")) scale(d.lods); }); Object.values(pkg.packages || {}).forEach(walk); };
 				walk(scene);
 			}
+
 			const context = ace.run("#stage", scene);
-			window.origins = window.angaia = context;
-				window.addEventListener('contextmenu', event => event.preventDefault());
-			const status = document.getElementById("status"), overlay = document.getElementById("loading");
-			// The cover stays solid until the world is made: the terrain is there, every model and texture has arrived, nothing is waiting to be built,
-			// and that has held for two seconds. Until then the player sees this and nothing of the world, not even a cloud.
-			const bar = document.getElementById("bar"), started = performance.now();
+			window.origins = window.angaia = window.ace_context = context;
+			window.addEventListener("contextmenu", event => event.preventDefault());
+			if (!overlay) return;
+
+			// The cover stays solid until the world is made: the terrain (if there is one) is there, every model and texture has arrived, nothing is waiting
+			// to be built, and that has held for a moment. Until then the player sees this and nothing of the world.
+			const started = performance.now(), minimum = (L.minimum != null ? L.minimum : 3) * 1000, timeout = (L.timeout != null ? L.timeout : 60) * 1000;
 			let quiet = 0;
 			const timer = setInterval(() => {
 				let total = 0, done = 0, waiting = 0;
@@ -64,11 +86,11 @@
 				}
 				const terrain = context.resolved.components.find(c => c.type === "terrain");
 				const tState = terrain && context.instances[ace.identity(terrain)] ? context.state[ace.identity(terrain)] : null;
-				const ready = tState && tState.loaded && context.frame > 120 && waiting === 0;
+				const ready = (!terrain || (tState && tState.loaded)) && context.frame > 120 && waiting === 0;
 				quiet = ready ? quiet + 1 : 0;
 				if (total > 0) bar.style.width = Math.round(100 * done / total) + "%";
-				status.textContent = ready ? "almost there" : "making the world  " + done + " of " + total;
-				if ((quiet >= 8 && performance.now() - started > 3000) || performance.now() - started > 60000) {
+				if (!status.textContent.startsWith("problem")) status.textContent = ready ? (L.ready || "") : (L.status || "") + (L.status ? "  " : "") + done + " of " + total;
+				if ((quiet >= 8 && performance.now() - started > minimum) || performance.now() - started > timeout) {
 					overlay.style.transition = "opacity 1.2s"; overlay.style.opacity = 0; clearInterval(timer);
 					setTimeout(() => overlay.remove(), 1400);
 				}
