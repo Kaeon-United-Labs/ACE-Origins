@@ -50,6 +50,9 @@ Add `?detail=0.6` to the address on a slower machine: it pulls the tree and terr
 | Inventory | X puts the chosen ability on the trigger, Y on the grip, left stick click clears |
 | Map | hold the trigger and move to drag, left stick pans, right stick zooms, trigger on an icon travels, A finds you |
 
+On a Quest the page starts with the tree and terrain ranges at half and the picture at 70% of the headset's own resolution; `?detail=` and `?xrscale=` override both. The post-processing finish (bloom, grade) is off inside a headset session.
+`Tools/xr-emu.mjs` runs the game in a software WebXR device (Meta's IWER, a Quest 3 profile) in headless Chrome, over https, for testing without a headset; `adv-vr.mjs` tests the controller logic.
+
 ### The adventure
 
 - **Inventory.** Abilities and things you carry. Select an ability and press **1** to put it on the left mouse button, **2** for the right, **3** to

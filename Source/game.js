@@ -28,6 +28,7 @@ const RK = VR ? 'A' : 'R';                                  // the key that talk
 X.vr = VR;
 let vrPtr = null, vrClick = false, vrDown = false, vrRow = null, vrRowClick = null, vrTabHit = -1;
 X.vrPad = { lx: 0, ly: 0, rx: 0, ry: 0 };
+X.vrEdge = {};                                              // buttons that went down this frame: worked out from what is held, because the engine's own edge list lasts only one tick
 if (VR) try {
 	const sL = ctlPads['xr-controller-left'] ? ctlPads['xr-controller-left'].properties.state : null;
 	const sR = ctlPads['xr-controller-right'] ? ctlPads['xr-controller-right'].properties.state : null;
@@ -37,6 +38,7 @@ if (VR) try {
 	const prev = G.vrH || {};
 	const edge = k => held[k] && !prev[k];
 	if (Object.keys(held).some(k => !!held[k] !== !!prev[k])) g.vrH = held;
+	for (const k of Object.keys(held)) X.vrEdge[k] = edge(k);
 	X.vrPad = { lx: ax(sL, 'thumbstick-x'), ly: ax(sL, 'thumbstick-y'), rx: ax(sR, 'thumbstick-x'), ry: ax(sR, 'thumbstick-y') };
 	// the hand that pulled its trigger last is the one that points
 	let hand = G.vrHand || 'right';
@@ -47,7 +49,7 @@ if (VR) try {
 	// where that hand's ray meets the interface: a plane the overlay's distance in front of the viewer, laid out in tangents (the interface's own units)
 	const ps = hand === 'left' ? (sL && sL.local ? sL : sR) : (sR && sR.local ? sR : sL);
 	if (ps && ps.local && ps.local.direction[2] < -1e-3) {
-		const OV = dat('ui').overlay || 10, o = ps.local.origin, d = ps.local.direction, t = (-OV - o[2]) / d[2];
+		const OV = dat('ui').overlay || 10, o = ps.local.origin, d = ps.local.direction, t = (-OV * 0.967 - o[2]) / d[2];   // the menu is drawn a little nearer than the plane the overlay sits on
 		if (t > 0) vrPtr = [(o[0] + t * d[0]) / OV, (o[1] + t * d[1]) / OV];
 	}
 	const mm = G.mode, press = (...c) => c.forEach(k => struck.push(k));

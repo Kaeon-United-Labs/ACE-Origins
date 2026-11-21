@@ -659,7 +659,7 @@ const mapParts = {
 
 P.ui = entity({ space: "camera", position: [0, 0, -OVERLAY], scale: [OVERLAY, OVERLAY, OVERLAY], rotation: [0, 0, 0], overlay: OVERLAY, ...UI, pois: Object.fromEntries(Object.keys(defs.pois).map(k => [k, 1])) }, null, {
 	dim: entity({ position: [0, 0, 0.02], enabled: false }, picture("vignette.png", 3.7, 2.1, 10)),
-	cursor: entity({ position: [0, 0, 0.07], enabled: false }, null, {
+	cursor: entity({ position: [0, 0, 0.034], enabled: false }, null, {
 		ring: entity({}, iconPic("icon_ring.png", 0.06, 30)),
 		dot: entity({ position: [0, 0, 0.001] }, tinted(0.012, 0.012, [1, 0.92, 0.6, 1], 31))
 	}),
@@ -765,7 +765,12 @@ fs.writeFileSync(path.join(build, "index.html"), `<!DOCTYPE html>
 		.then(() => fetch("ACE Origins.json")).then(response => response.json()).then(scene => {
 			// ?detail=0.6 pulls every tree and terrain range in to 60% for a slower machine; the trees are never removed
 			if (new URLSearchParams(location.search).get("post") === "0") delete scene.packages.world.utilities.settings.properties.data.post.finish;
-			const detail = parseFloat(new URLSearchParams(location.search).get("detail"));
+			// a headset draws everything twice and has a small GPU: on a Quest the ranges start at half and the picture at 70% of the device's own resolution (?detail= and ?xrscale= override)
+			const quest = /OculusBrowser|Quest/i.test(navigator.userAgent), params = new URLSearchParams(location.search);
+			const camera = scene.packages.player.packages.head.utilities.camera.properties.data;
+			const xrscale = parseFloat(params.get("xrscale")) || (quest ? 0.7 : null);
+			if (xrscale && camera.xr) camera.xr.scale = xrscale;
+			const detail = params.has("detail") ? parseFloat(params.get("detail")) : (quest ? 0.5 : 1);
 			if (detail > 0 && detail !== 1) {
 				const scale = lods => lods.forEach(l => { if (l.range < 1e8) l.range *= detail; });
 				const walk = pkg => { Object.values(pkg.utilities || {}).forEach(u => { const d = u.properties && u.properties.data; if (d && Array.isArray(d.lods) && (u.properties.tags || []).some(t => t === "scatter" || t === "terrain")) scale(d.lods); }); Object.values(pkg.packages || {}).forEach(walk); };

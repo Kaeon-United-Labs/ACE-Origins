@@ -580,6 +580,22 @@
 		let camera = scene.activeCamera;
 		let spec = instance.data.post != null ? instance.data.post.finish : null;
 		let state = context.meta.finish;
+
+		/*
+
+			Not inside a headset session: the pipeline is built on the
+			session's own cameras and the output is the session's framebuffer,
+			where a full-resolution chain of passes is both the most expensive
+			thing in the frame and, as a render target of the wrong size, a
+			source of GL errors. The finish returns when the session ends.
+
+		*/
+		let inSession = context.meta.xr != null && context.meta.xr.baseExperience != null &&
+			context.meta.xr.baseExperience.state === BABYLON.WebXRState.IN_XR;
+
+		if(inSession)
+			spec = null;
+
 		let signature = JSON.stringify(spec);
 
 		if(state != null && state.camera === camera && state.signature === signature)
@@ -1561,7 +1577,21 @@
 						not asking for teleportation.
 
 					*/
-					disableTeleportation: data.xr.teleport !== true
+					disableTeleportation: data.xr.teleport !== true,
+
+					/*
+
+						A headset draws the scene twice, at a resolution the
+						device chooses; a document that cannot afford that
+						asks for a fraction of it (1 is the device's own).
+
+					*/
+					outputCanvasOptions: data.xr.scale != null ? {
+						canvasOptions: {
+							antialias: true, depth: true, stencil: true, alpha: true,
+							framebufferScaleFactor: data.xr.scale
+						}
+					} : undefined
 
 				}).then(experience => {
 

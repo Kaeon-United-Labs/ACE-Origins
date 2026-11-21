@@ -110,8 +110,8 @@ if (inUi && V) {
 // in a headset, where the hand points
 show('ui.cursor', !!X.cursor && inUi);
 if (X.cursor && inUi) {
-	const cn = dat('ui.cursor'), q = cn && cn.position ? cn.position : [1e9, 1e9, 0.07];
-	if (cn && (Math.abs(q[0] - X.cursor[0]) > 5e-5 || Math.abs(q[1] - X.cursor[1]) > 5e-5)) put('ui.cursor', { position: [+X.cursor[0].toFixed(5), +X.cursor[1].toFixed(5), 0.07] });
+	const cn = dat('ui.cursor'), q = cn && cn.position ? cn.position : [1e9, 1e9, 0.034];
+	if (cn && (Math.abs(q[0] - X.cursor[0]) > 5e-5 || Math.abs(q[1] - X.cursor[1]) > 5e-5)) put('ui.cursor', { position: [+X.cursor[0].toFixed(5), +X.cursor[1].toFixed(5), 0.034] });
 }
 
 if (X.mode === 'talk' && TK) {
