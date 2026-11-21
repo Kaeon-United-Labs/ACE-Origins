@@ -49,6 +49,20 @@ const level = heading(yaw, 0);
 const right = [Math.cos(yaw), 0, -Math.sin(yaw)];
 const up = [-right[2] * fwd[1], right[2] * fwd[0] - right[0] * fwd[2], right[0] * fwd[1]];
 
+// In a headset the left controller says where forward is, for walking, swimming and flying, and the right one is where the actions go. Rising is straight up.
+const rayOf = pad => { const r = pad && pad.properties.state.ray; return r && r.direction && r.direction.every(Number.isFinite) ? norm(r.direction) : null; };
+const lRay = vr ? rayOf(L) : null, rRay = vr ? rayOf(R) : null;
+let mFwd = fwd, mLevel = level, mRight = right, mUp = up;
+if (lRay) {
+	const h = Math.hypot(lRay[0], lRay[2]);
+	mFwd = lRay; mLevel = h > 0.2 ? [lRay[0] / h, 0, lRay[2] / h] : level; mRight = [-mLevel[2], 0, mLevel[0]]; mUp = [0, 1, 0];
+}
+let aimDir = fwd, aimSide = right, aimLift = up;
+if (rRay) {
+	const h = Math.hypot(rRay[0], rRay[2]), lv = h > 0.05 ? [rRay[0] / h, 0, rRay[2] / h] : level;
+	aimDir = rRay; aimSide = [-lv[2], 0, lv[0]];
+	aimLift = [-aimSide[2] * rRay[1], aimSide[2] * rRay[0] - aimSide[0] * rRay[2], aimSide[0] * rRay[1]];
+}
 let ahead = 0, aside = 0, rise = 0, wantBoost = false, fire = false, fireR = false, toggle = false, land = false, jump = false;
 if (play) {
 	if (vr) {
@@ -141,7 +155,7 @@ if (flying) {
 	boost = clamp(boost + (boosting ? -0.32 : 0.16) * DT, 0, 1);
 	boostSpent = spent;
 	const top = boosting ? burst : cruise;
-	const want = add(add(mul(fwd, ahead * (ahead < 0 ? cruise * 0.5 : top)), mul(right, aside * pan)), mul(up, rise * climb));
+	const want = add(add(mul(mFwd, ahead * (ahead < 0 ? cruise * 0.5 : top)), mul(mRight, aside * pan)), mul(mUp, rise * climb));
 	const k = 1 - Math.exp(-(boosting ? 1.6 : 2.4) * DT);
 	vel = [vel[0] + (want[0] - vel[0]) * k, vel[1] + (want[1] - vel[1]) * k, vel[2] + (want[2] - vel[2]) * k];
 	pos = [pos[0] + vel[0] * DT, pos[1] + vel[1] * DT, pos[2] + vel[2] * DT];
@@ -153,7 +167,7 @@ if (flying) {
 } else if (swim) {
 	boost = clamp(boost + 0.2 * DT, 0, 1);
 	const speed = wantBoost ? 10 : 5;
-	const want = add(add(mul(fwd, ahead * speed), mul(right, aside * speed * 0.8)), mul(up, rise * speed * 0.8));
+	const want = add(add(mul(mFwd, ahead * speed), mul(mRight, aside * speed * 0.8)), mul(mUp, rise * speed * 0.8));
 	// near the surface, and not asking to go anywhere vertically, the body floats up until the head is out
 	if (rise === 0 && pos[1] + EYE > SEA - 1.5) want[1] += 0.8;
 	const k = 1 - Math.exp(-4 * DT);           // water drags: it takes a moment to get going, and to stop
@@ -168,7 +182,7 @@ if (flying) {
 } else {
 	boost = clamp(boost + 0.2 * DT, 0, 1);
 	const speed = wantBoost ? 10 : 5;
-	const want = add(mul(level, ahead * speed), mul(right, aside * speed * 0.8));
+	const want = add(mul(mLevel, ahead * speed), mul(mRight, aside * speed * 0.8));
 	// on the ground the body answers quickly; in the air it only leans, and keeps the speed it left with
 	const k = 1 - Math.exp(-(grounded ? 9 : 1.6) * DT);
 	vel = [vel[0] + (want[0] - vel[0]) * k, 0, vel[2] + (want[2] - vel[2]) * k];
@@ -265,7 +279,7 @@ if (Object.keys(cds).some(k => cds[k] > 0) || Object.keys(RPG.cd || {}).some(k =
 put('player', {
 	position: pos, rotation: [0, yaw, 0], yaw, pitch, roll, vel, vy, bp, stepT,
 	flying, boost, boosting, cool, fire: shoot, nshots, spread, bdmg, alt: shoot ? 1 - (d.alt || 0) : (d.alt || 0),
-	speed: (flying || swim) ? speedNow : flat, swim, aim: fwd, side: right, lift: up, onGround: isGrounded ? 1 : 0, grounded: isGrounded ? 1 : 0,
+	speed: (flying || swim) ? speedNow : flat, swim, aim: aimDir, side: aimSide, lift: aimLift, muzzle: rRay ? R.properties.state.ray.origin : null, onGround: isGrounded ? 1 : 0, grounded: isGrounded ? 1 : 0,
 	ground: ground == null ? 0 : ground,
 	evStep: stepTick, evLand: landed, evJump: jumped
 });

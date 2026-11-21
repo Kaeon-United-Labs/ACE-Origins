@@ -273,7 +273,7 @@ P.player = entity({
 	bump: comp("query", { type: "overlap", offset: [0, 0.95, 0], shape: { shape: "sphere", size: 0.5 }, tags: ["solid"], limit: 0, continuous: true })
 }, {
 	head: entity({ position: [0, EYE, 0], rotation: [0, 0, 0] }, {
-		camera: comp("camera", { projection: "perspective", fov: 1.12, near: 0.28, far: 16000, control: "none", xr: { mode: "vr", space: "local-floor", features: [] } })
+		camera: comp("camera", { projection: "perspective", fov: 1.12, near: 0.28, far: 16000, control: "none", xr: { mode: "vr", space: "local-floor", features: [], near: 0.4, far: 12000 } })
 	})
 });   // (the player has no body: the camera is all there is of them)
 

@@ -63,6 +63,11 @@ const prompt = G.mode === 'play' ? (G.interact || '') : '';
 setText('interact', prompt);
 show('interactbg', !!prompt);
 
+// the sight is where the right hand points, in a headset; at the middle otherwise
+{
+	const want = X.vr && X.aimPt ? [+X.aimPt[0].toFixed(4), +X.aimPt[1].toFixed(4), 0] : [0, 0, 0], cur = hud.packages.reticle.properties.meta.data.position || [0, 0, 0];
+	if (Math.abs(cur[0] - want[0]) > 1e-4 || Math.abs(cur[1] - want[1]) > 1e-4) put('hud.reticle', { position: want });
+}
 // the reticle goes warm when a bolt lands
 const marked = G.hitMark > 0;
 if (!!hud.packages.reticle.utilities.mat.properties.data.hot !== marked)

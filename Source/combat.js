@@ -45,7 +45,9 @@ if (P.fire === 1 && alive) {
 	for (let n = 0; n < count; n++) {
 		const slot = free('shots.s', SHOTS, usedShot);
 		if (slot < 0) break;
-		const origin = add(add(add(P.position, [0, P.eye - 0.3, 0]), mul(P.aim, 5)), add(mul(P.side, P.alt ? 0.9 : -0.9), mul(P.lift, -0.5)));
+		// from the muzzle of the controller that is pointing, in a headset; otherwise from just ahead of and beside the eye
+		const origin = P.muzzle ? add(P.muzzle, mul(P.aim, 1.2))
+			: add(add(add(P.position, [0, P.eye - 0.3, 0]), mul(P.aim, 5)), add(mul(P.side, P.alt ? 0.9 : -0.9), mul(P.lift, -0.5)));
 		let dir = P.aim;
 
 		// a gentle pull toward whatever is nearly in the sights

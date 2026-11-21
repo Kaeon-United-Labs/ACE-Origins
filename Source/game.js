@@ -52,6 +52,11 @@ if (VR) try {
 		const OV = dat('ui').overlay || 10, o = ps.local.origin, d = ps.local.direction, t = (-OV * 0.967 - o[2]) / d[2];   // the menu is drawn a little nearer than the plane the overlay sits on
 		if (t > 0) vrPtr = [(o[0] + t * d[0]) / OV, (o[1] + t * d[1]) / OV];
 	}
+	// where the right hand's ray meets the heads-up display, for the sight
+	if (sR && sR.local && sR.local.direction[2] < -1e-3) {
+		const OV = dat('ui').overlay || 10, o = sR.local.origin, d = sR.local.direction, t = (-OV - o[2]) / d[2];
+		if (t > 0) X.aimPt = [(o[0] + t * d[0]) / OV, (o[1] + t * d[1]) / OV];
+	}
 	const mm = G.mode, press = (...c) => c.forEach(k => struck.push(k));
 	// a stick pushed to either end chooses, then repeats
 	const ny = ax(sL, 'thumbstick-y') || ax(sR, 'thumbstick-y'), dir = ny > 0.6 ? 1 : ny < -0.6 ? -1 : 0;

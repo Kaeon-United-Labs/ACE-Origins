@@ -1659,6 +1659,50 @@
 
 				let state = { presenting };
 
+				/*
+
+					A session has its own cameras and its own depth buffer, drawn
+					with the projection the device supplies, which is an
+					ordinary one. A reversed depth buffer (cleared to 0, tested
+					greater-or-equal) is not what that projection writes, and
+					everything is then drawn out of order, or not at all. It is
+					put aside while presenting and put back afterwards.
+
+					The near plane is also raised, since an ordinary 24-bit
+					depth buffer gets its precision from it: the document may
+					say how far in a headset is drawn from and to (`xr.near`,
+					`xr.far`).
+
+				*/
+				let engine = context.meta.engine;
+
+				if(presenting) {
+
+					if(engine.useReverseDepthBuffer) {
+
+						engine.useReverseDepthBuffer = false;
+						context.meta.reverseHeld = true;
+					}
+
+					let head = xr.baseExperience.camera;
+
+					if(head != null) {
+
+						let near = instance.data.xr.near, far = instance.data.xr.far;
+
+						if(near != null && head.minZ !== near)
+							head.minZ = near;
+
+						if(far != null && head.maxZ !== far)
+							head.maxZ = far;
+					}
+
+				} else if(context.meta.reverseHeld) {
+
+					engine.useReverseDepthBuffer = true;
+					context.meta.reverseHeld = false;
+				}
+
 				if(presenting && xr.baseExperience.camera != null) {
 
 					let head = xr.baseExperience.camera;
