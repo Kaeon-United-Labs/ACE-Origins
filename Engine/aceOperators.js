@@ -4260,8 +4260,9 @@
 
 								hits.push(describe(other));
 
-							} else if(away >= 0 && away <= distance) {
+							} else if((away >= 0 || data.under === true) && Math.abs(away) <= distance) {
 
+								/* With `under`, a ray that starts below the ground still answers with it, at a negative distance. */
 								hits.push({
 									target: fast.target,
 									point: [origin.x, fast.y, origin.z],
