@@ -1,7 +1,6 @@
 node_modules/
-Tools/node_modules/
-Tools/*.png
-Tools/*.log
+Source/
+Tools/
 *.log
 .DS_Store
 Thumbs.db
