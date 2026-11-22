@@ -30,7 +30,7 @@ Saves are kept by the browser, so they stay on the machine and the address you p
 | **Swim** | Fly into the sea and carry on: flying is the same in water as in air. On foot, walk in until the water is deeper than you and you swim: where you look, at walking pace. You float up to tread water with your head in the air to look around, but you cannot leave the water. E / Space rise, Q / Ctrl sink | |
 | **Interact** | **R**: talk to someone, or take something | |
 | Inventory / log / map | I / L / M. Esc or the same key closes it | |
-| Pause | Esc (opens the menu; Enter or Esc resumes) | |
+| Pause | Esc or Tab (opens the menu; Esc or Tab resumes). If the mouse does not look after resuming, click in the window. In the menu A / D page through the tabs; on the map Shift + WASD pans it | |
 
 Add `?detail=0.6` to the address on a slower machine: it pulls the tree and terrain ranges in to 60% (the trees themselves stay).
 
@@ -111,3 +111,7 @@ own licences, listed in [Assets/CREDITS.md](Assets/CREDITS.md); the Apache licen
 `index.html` is generic: `?game=path/to/file.json` runs any ACE document (default `ACE Origins.json`). It starts a document at once, with no cover.
 What a document wants of its page it says in `world.settings.data.boot`: `title`, `fonts` (loaded before the world is made) and `loading`
 (a cover with its own title, colours and fonts, shown until the world is made; leave it out for none). cannon.js is fetched only for a document that sets gravity.
+
+## Collision
+
+The player is a Havok character (a capsule swept through the world by the physics engine), so it cannot be flown or walked through terrain, buildings, the fort, trees or the floating island, however fast it goes. The world it collides with is made round it, from what the document tags solid. Havok is loaded from the Babylon CDN when `world.physics` is `"havok"`; add `?physics=off` to the address to run without it (the older movement code takes over).

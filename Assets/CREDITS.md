@@ -67,3 +67,7 @@ used as they are, already rigged and animated, with only their textures reduced 
 
 `UI/map.jpg`, the map's icons (`icon_*.png`), the arrow, the frame, the compass, the tooltip and `glow.png` are drawn by `Tools/generate-map.mjs` and `Tools/build.mjs` from the game's own height data, and are the project's.
 `Models/City/*` were afterwards processed by `Tools/fix-coplanar.mjs` (faces laid exactly over other faces lifted a few centimetres; materials made single-sided).
+
+## Collision
+
+Collision uses Havok Physics, the WebAssembly build distributed with Babylon.js and loaded at run time from the Babylon CDN (`https://cdn.babylonjs.com/havok/`). It is not part of this repository and is not covered by the Apache License; see Havok's own licence terms.

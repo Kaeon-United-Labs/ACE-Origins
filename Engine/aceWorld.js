@@ -1178,6 +1178,71 @@
 		return null;
 	};
 
+	/*
+
+		The solid scatter instances within `reach` of a point, as the pieces a
+		physics world would be made of: each is the trunk (and crown) of the
+		`collide` spec, in world space, with a stable id.
+
+	*/
+	ace.adapter.solidsNear = (context, centre, reach) => {
+
+		let found = [];
+
+		Object.keys(context.instances).forEach(id => {
+
+			let instance = context.instances[id];
+
+			if(instance.type !== "scatter")
+				return;
+
+			let spec = instance.data.collide;
+			let object = instance.object;
+
+			if(!isObject(spec) || !object.ready || object.asleep || !object.node.isEnabled(true))
+				return;
+
+			object.node.computeWorldMatrix(false);
+
+			let origin = object.node.absolutePosition;
+			let lx = centre.x - origin.x, lz = centre.z - origin.z;
+			let parts = [{ radius: spec.radius, base: spec.base != null ? spec.base : 0, height: spec.height }];
+
+			if(isObject(spec.crown))
+				parts.push(spec.crown);
+
+			object.buckets.forEach((bucket, key) => {
+
+				if(Math.abs(lx - bucket.cx) > bucket.half + reach || Math.abs(lz - bucket.cz) > bucket.half + reach)
+					return;
+
+				for(let index = 0; index < bucket.count; index++) {
+
+					let at = index * RECORD;
+					let x = bucket.array[at], y = bucket.array[at + 1], z = bucket.array[at + 2], size = bucket.array[at + 4];
+					let dx = lx - x, dz = lz - z;
+
+					if(Math.abs(dx) > reach || Math.abs(dz) > reach)
+						continue;
+
+					found.push({
+						id: id + "|" + key + "|" + index,
+						distance: Math.hypot(dx, dz),
+						x: x + origin.x,
+						z: z + origin.z,
+						parts: parts.map(part => ({
+							radius: Math.max(0.05, part.radius * size),
+							low: origin.y + y + (part.base != null ? part.base : 0) * size,
+							high: origin.y + y + (part.base != null ? part.base : 0) * size + Math.max(0.1, part.height * size)
+						}))
+					});
+				}
+			});
+		});
+
+		return found;
+	};
+
 	ace.adapter.collide = (context, centre, radius, allowed, hits) => {
 
 		Object.keys(context.instances).forEach(id => {

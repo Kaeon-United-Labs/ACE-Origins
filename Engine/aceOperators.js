@@ -3855,8 +3855,31 @@
 					apart.
 
 				*/
-				if(object.group != null && object.group !== group)
-					object.group.stop();
+				if(object.group != null && object.group !== group) {
+
+					/*
+
+						With `blend` (seconds) the clip being replaced goes on playing
+						while the new one is mixed in over it, and is stopped when the
+						mix is whole. A switch made during a mix completes that one
+						first.
+
+					*/
+					let blend = instance.data.blend != null ? instance.data.blend : 0;
+
+					if(object.fading != null) {
+
+						if(object.fading.out !== group)
+							object.fading.out.stop();
+
+						object.fading = null;
+					}
+
+					if(blend > 0 && object.group.isPlaying === true)
+						object.fading = { out: object.group, start: performance.now(), duration: blend * 1000 };
+					else
+						object.group.stop();
+				}
 
 				object.group = group;
 
@@ -3874,6 +3897,9 @@
 
 					object.autoplayed = group;
 					group.play(instance.data.loop !== false);
+
+					if(object.fading != null)
+						group.setWeightForAllAnimatables(0);
 				}
 
 				if(instance.data.weight != null && group.setWeightForAllAnimatables != null)
@@ -3895,6 +3921,9 @@
 				if(field === "play") {
 
 					group.play(instance.data.loop !== false);
+
+					if(instance.object.fading != null)
+						group.setWeightForAllAnimatables(0);
 
 				} else if(field === "stop") {
 
@@ -3920,6 +3949,25 @@
 					return;
 				}
 
+				let fade = instance.object.fading;
+
+				if(fade != null) {
+
+					let t = Math.min(1, (performance.now() - fade.start) / fade.duration);
+
+					if(t >= 1) {
+
+						fade.out.stop();
+						instance.object.fading = null;
+						group.setWeightForAllAnimatables(-1);
+
+					} else {
+
+						/* the new clip is mixed over the old one, which stays whole until it is stopped */
+						group.setWeightForAllAnimatables(t * t * (3 - 2 * t));
+					}
+				}
+
 				ace.setState(context, instance.record, {
 					playing: group.isPlaying === true,
 					time: group.animatables?.[0]?.masterFrame,
@@ -3930,6 +3978,9 @@
 			},
 
 			onDestroy: (context, instance) => {
+
+				if(instance.object.fading != null)
+					instance.object.fading.out.stop();
 
 				if(instance.object.group != null)
 					instance.object.group.stop();
@@ -4850,6 +4901,7 @@
 			scale = timeData.scale != null ? timeData.scale : 1;
 
 			context.meta.timeScale = scale;
+			context.meta.frameDelta = unscaled * scale;
 
 			adapter.cursor(context, displayData.cursor);
 
