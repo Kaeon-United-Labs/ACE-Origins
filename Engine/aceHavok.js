@@ -493,7 +493,7 @@
 
 				c.maxSlopeCosine = data.slope != null ? data.slope : 0.2;
 				c.keepDistance = 0.05;
-				c.keepContactTolerance = 0.1;
+				c.keepContactTolerance = 0.25;
 				c.maxCastIterations = 12;
 
 				object.written = here.clone();

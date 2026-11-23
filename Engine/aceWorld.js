@@ -114,6 +114,163 @@
 		return { heights, width: bitmap.width, height: bitmap.height };
 	};
 
+	/*
+
+		The same heights, without a canvas. Drawing an image to a canvas and
+		reading it back hands the bytes to the browser to treat as a picture:
+		it may convert colours for the display, premultiply, or (with its
+		fingerprinting protection on) change the low bits of what is read, and
+		a height held in two bytes is wrecked by any of them: one step of the
+		high byte is metres of ground. A PNG is read here directly: the
+		chunks, the inflate, the row filters. Only the plain forms are
+		handled (8 bits a channel, not interlaced); anything else returns
+		null and the canvas is used.
+
+	*/
+	const inflate = async bytes => {
+
+		let stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+
+		return new Uint8Array(await new Response(stream).arrayBuffer());
+	};
+
+	const decodePng = async buffer => {
+
+		if(typeof DecompressionStream === "undefined")
+			return null;
+
+		let d = new Uint8Array(buffer);
+		let signature = [137, 80, 78, 71, 13, 10, 26, 10];
+
+		if(d.length < 33 || signature.some((value, index) => d[index] !== value))
+			return null;
+
+		let view = new DataView(d.buffer, d.byteOffset, d.byteLength);
+		let at = 8, width = 0, height = 0, depth = 0, type = 0, interlace = 0, parts = [];
+
+		while(at + 8 <= d.length) {
+
+			let length = view.getUint32(at);
+			let name = String.fromCharCode(d[at + 4], d[at + 5], d[at + 6], d[at + 7]);
+
+			if(name === "IHDR") {
+
+				width = view.getUint32(at + 8);
+				height = view.getUint32(at + 12);
+				depth = d[at + 16];
+				type = d[at + 17];
+				interlace = d[at + 20];
+
+			} else if(name === "IDAT") {
+
+				parts.push(d.subarray(at + 8, at + 8 + length));
+
+			} else if(name === "IEND") {
+
+				break;
+			}
+
+			at += 12 + length;
+		}
+
+		let channels = type === 0 ? 1 : type === 2 ? 3 : type === 6 ? 4 : 0;
+
+		if(depth !== 8 || interlace !== 0 || channels === 0 || width === 0 || parts.length === 0)
+			return null;
+
+		let joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+		let place = 0;
+
+		parts.forEach(part => { joined.set(part, place); place += part.length; });
+
+		let raw = await inflate(joined);
+		let stride = width * channels;
+
+		if(raw.length < (stride + 1) * height)
+			return null;
+
+		let out = new Uint8Array(stride * height);
+
+		for(let row = 0; row < height; row++) {
+
+			let filter = raw[row * (stride + 1)];
+			let from = row * (stride + 1) + 1;
+			let into = row * stride;
+			let above = into - stride;
+
+			for(let x = 0; x < stride; x++) {
+
+				let value = raw[from + x];
+				let left = x >= channels ? out[into + x - channels] : 0;
+				let up = row > 0 ? out[above + x] : 0;
+				let corner = row > 0 && x >= channels ? out[above + x - channels] : 0;
+
+				if(filter === 1)
+					value += left;
+				else if(filter === 2)
+					value += up;
+				else if(filter === 3)
+					value += (left + up) >> 1;
+				else if(filter === 4) {
+
+					let guess = left + up - corner;
+					let a = Math.abs(guess - left), b = Math.abs(guess - up), c = Math.abs(guess - corner);
+
+					value += a <= b && a <= c ? left : b <= c ? up : corner;
+
+				} else if(filter !== 0)
+					return null;
+
+				out[into + x] = value & 255;
+			}
+		}
+
+		return { width, height, channels, data: out };
+	};
+
+	/* Heights in [0,1] from the location of an image: exact where the image is a plain PNG, through a canvas where it is not. */
+	const loadHeights = async (locations, encoding) => {
+
+		let result = await fetchFirst(locations, "arrayBuffer");
+		let png = null;
+
+		try { png = await decodePng(result.data); } catch(error) { png = null; }
+
+		if(png != null) {
+
+			let count = png.width * png.height;
+			let heights = new Float32Array(count);
+
+			if(encoding === "r8" || png.channels === 1) {
+
+				for(let index = 0; index < count; index++)
+					heights[index] = png.data[index * png.channels] / 255;
+
+			} else {
+
+				for(let index = 0; index < count; index++) {
+
+					heights[index] = (png.data[index * png.channels] * 256 +
+						png.data[index * png.channels + 1]) / 65535;
+				}
+			}
+
+			return { heights, width: png.width, height: png.height, location: result.location, exact: true };
+		}
+
+		let bitmap = await root.createImageBitmap(new Blob([result.data]), {
+			colorSpaceConversion: "none",
+			premultiplyAlpha: "none"
+		});
+
+		let decoded = await decodeHeights(bitmap, encoding);
+
+		decoded.location = result.location;
+		decoded.exact = false;
+
+		return decoded;
+	};
+
 	const TERRAIN_VERTEX = `
 		precision highp float;
 		attribute vec3 position;
@@ -455,16 +612,9 @@
 
 			ace.setState(context, instance.record, { loaded: false });
 
-			fetchFirst(locations, "blob").then(async result => {
+			loadHeights(locations, data.encoding != null ? data.encoding : "rg16").then(async decoded => {
 
-				let bitmap = await root.createImageBitmap(result.data, {
-					colorSpaceConversion: "none",
-					premultiplyAlpha: "none"
-				});
-
-				let decoded = await decodeHeights(
-					bitmap, data.encoding != null ? data.encoding : "rg16"
-				);
+				let result = { location: decoded.location };
 
 				if(object.disposed)
 					return;
@@ -523,6 +673,7 @@
 
 				ace.setState(context, instance.record, {
 					loaded: true,
+					exact: decoded.exact,
 					source: result.location,
 					chunks: object.chunks.length,
 					size,
@@ -1694,6 +1845,7 @@
 
 	const WATER_FRAGMENT = `
 		precision highp float;
+		precision highp sampler2D;
 		varying vec3 vWorld;
 		uniform vec3 camPos;
 		uniform vec3 sunDir;
@@ -1713,13 +1865,11 @@
 		uniform samplerCube sky;
 
 		float decode(vec2 texel) {
-			vec4 c = texture2D(heightMap, texel / hinfo.x);
-			return (c.r * 255.0 * 256.0 + c.g * 255.0) / 65535.0 * hinfo.z + hinfo.y;
+			return texture2D(heightMap, texel / hinfo.x).r * hinfo.z + hinfo.y;
 		}
 
 		float decode2(vec2 texel) {
-			vec4 c = texture2D(heightMap2, texel / hinfo2.x);
-			return (c.r * 255.0 * 256.0 + c.g * 255.0) / 65535.0 * hinfo2.z + hinfo2.y;
+			return texture2D(heightMap2, texel / hinfo2.x).r * hinfo2.z + hinfo2.y;
 		}
 
 		// the ground's height under a point, interpolated by hand (the 16 bits are in two channels); a second map covers a second island
@@ -1892,11 +2042,55 @@
 
 			bind("normA", layers.a != null ? layers.a : "Assets/Textures/water_nor.png", true);
 			bind("normB", layers.b != null ? layers.b : "Assets/Textures/water_nor2.png", true);
-			bind("heightMap", terrain.height != null ? terrain.height : "Assets/Terrain/height.png", false, true);
+			/*
+
+				The heights are given to the shader as numbers, not as the two
+				bytes of a picture: a float texture sampled without blending is
+				the same on every machine, which a picture read through the
+				browser's image handling is not.
+
+			*/
+			let sized = [];
+			const height = (sampler, url) => {
+
+				let placeholder = BABYLON.RawTexture.CreateRTexture(
+					new Float32Array([0]), 1, 1, scene, false, false,
+					BABYLON.Texture.NEAREST_SAMPLINGMODE, BABYLON.Constants.TEXTURETYPE_FLOAT
+				);
+
+				owned.push(placeholder);
+				material.setTexture(sampler, placeholder);
+
+				loadHeights([url], "rg16").then(decoded => {
+
+					if(object.disposed)
+						return;
+
+					/* rows are turned over: row 0 of the image is the far edge, which is the top of the texture */
+					let turned = new Float32Array(decoded.heights.length);
+
+					for(let row = 0; row < decoded.height; row++)
+						turned.set(decoded.heights.subarray(row * decoded.width, (row + 1) * decoded.width), (decoded.height - 1 - row) * decoded.width);
+
+					let texture = BABYLON.RawTexture.CreateRTexture(
+						turned, decoded.width, decoded.height, scene, false, false,
+						BABYLON.Texture.NEAREST_SAMPLINGMODE, BABYLON.Constants.TEXTURETYPE_FLOAT
+					);
+
+					texture.wrapU = texture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+					owned.push(texture);
+					material.setTexture(sampler, texture);
+					sized.push(decoded.exact);
+				}).catch(error => context.errors.push({ type: "water", hook: sampler, message: error.message }));
+			};
+
+			let object = { disposed: false };
+
+			height("heightMap", terrain.height != null ? terrain.height : "Assets/Terrain/height.png");
 
 			let second = isObject(data.terrain2) ? data.terrain2 : null;
 
-			bind("heightMap2", second != null ? second.height : (terrain.height != null ? terrain.height : "Assets/Terrain/height.png"), false, true);
+			height("heightMap2", second != null ? second.height : (terrain.height != null ? terrain.height : "Assets/Terrain/height.png"));
 
 			let elevation = Array.isArray(terrain.elevation) ? terrain.elevation : [-80, 1500];
 			let extent = terrain.size != null ? terrain.size : 8192;
@@ -1928,7 +2122,9 @@
 			material.setColor3("deepColor", H.color3(data.deep, [0.01, 0.12, 0.24]));
 			material.setColor3("underColor", H.color3(data.under, [0.02, 0.2, 0.32]));
 
-			return { mesh, material, owned, node };
+			object.mesh = mesh; object.material = material; object.owned = owned; object.node = node;
+
+			return object;
 		},
 
 		onUpdate: (context, instance) => {
@@ -1967,6 +2163,7 @@
 
 		onDestroy: (context, instance) => {
 
+			instance.object.disposed = true;
 			instance.object.owned.forEach(texture => texture.dispose());
 			instance.object.material.dispose();
 			instance.object.mesh.dispose();

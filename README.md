@@ -114,4 +114,4 @@ What a document wants of its page it says in `world.settings.data.boot`: `title`
 
 ## Collision
 
-The player is a Havok character (a capsule swept through the world by the physics engine), so it cannot be flown or walked through terrain, buildings, the fort, trees or the floating island, however fast it goes. The world it collides with is made round it, from what the document tags solid. Havok is loaded from the Babylon CDN when `world.physics` is `"havok"`; add `?physics=off` to the address to run without it (the older movement code takes over).
+The player is a Havok character (a capsule swept through the world by the physics engine), so it cannot be flown or walked through terrain, buildings, the fort, trees or the floating island, however fast it goes. The world it collides with is made round it, from what the document tags solid. Havok is loaded from the Babylon CDN when `world.physics` is `"character"`; add `?physics=off` to the address to run without it (the older movement code takes over).

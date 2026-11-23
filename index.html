@@ -26,7 +26,7 @@
 		//   fonts    [{ family, src, weight }], loaded before the world is made (text in the world is drawn once, in whatever face is there then)
 		//   loading  a cover shown until the world is made. { title, status, ready, background, color, muted, track, bar, titleFont, bodyFont, minimum, timeout }
 		//            absent: no cover, the document just starts
-		// Physics (cannon.js, or Havok when world.physics says "havok") is fetched only for a document that asks for gravity, which is when the adapter would use it.
+		// Physics (cannon.js, or the collision engine for characters when world.physics says "character") is fetched only for a document that asks for gravity, which is when the adapter would use it.
 		const params = new URLSearchParams(location.search);
 		const load = src => new Promise(resolve => { const s = document.createElement("script"); s.src = src; s.onload = s.onerror = () => resolve(); document.head.appendChild(s); });
 		const make = (tag, css, text) => { const e = document.createElement(tag); if (css) e.style.cssText = css; if (text) e.textContent = text; return e; };
@@ -40,7 +40,7 @@
 			await Promise.all((boot.fonts || []).map(f => { try { const face = new FontFace(f.family, "url(" + f.src + ")", { weight: f.weight || "400" }); return face.load().then(l => document.fonts.add(l)).catch(() => { }); } catch (e) { return null; } }));
 			if (data.gravity != null && typeof CANNON === "undefined") await load("https://cdn.babylonjs.com/cannon.js");
 			// a document that asks for Havok (world.physics) gets it; if it cannot be had the document keeps to what it did without
-			if (data.physics === "havok" && params.get("physics") !== "off") {
+			if (data.physics === "character" && params.get("physics") !== "off") {
 				await load("https://cdn.babylonjs.com/havok/HavokPhysics_umd.js");
 				try { window.havokInstance = await HavokPhysics(); } catch (e) { console.warn("Havok did not load: " + e.message); }
 			}
