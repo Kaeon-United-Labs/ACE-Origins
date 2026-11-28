@@ -2190,6 +2190,7 @@
 				};
 
 				let loaded = true;
+				let pendingVideo = false;
 
 				Object.keys(
 					isObject(data.maps) ? data.maps : { }
@@ -2239,12 +2240,44 @@
 
 						if(object.owned[slot] == null) {
 
-							object.owned[slot] = new BABYLON.Texture(
-								value, context.meta.scene
-							);
+							/* A moving picture is a video file, played over and over without sound. */
+							if(/\.(webm|mp4|ogv|m4v)(\?.*)?$/i.test(value)) {
+
+								object.owned[slot] = new BABYLON.VideoTexture(
+									instance.path.join(".") + "." + slot, [value], context.meta.scene,
+									false, false, BABYLON.Texture.BILINEAR_SAMPLINGMODE,
+									{ autoPlay: true, loop: true, muted: true, autoUpdateTexture: true }
+								);
+
+								object.owned[slot].video.playsInline = true;
+
+							/* Pixel art is sampled as it is: no blending of neighbours, and no smaller copies. */
+							} else if(data.filter === "nearest") {
+
+								object.owned[slot] = new BABYLON.Texture(
+									value, context.meta.scene, true, true,
+									BABYLON.Texture.NEAREST_SAMPLINGMODE
+								);
+
+								object.owned[slot].wrapU = object.owned[slot].wrapV =
+									BABYLON.Texture.CLAMP_ADDRESSMODE;
+
+							} else {
+
+								object.owned[slot] = new BABYLON.Texture(
+									value, context.meta.scene
+								);
+							}
 						}
 
 						texture = object.owned[slot];
+
+						/* Until a video has a picture to show it is not shown (what is behind it is), and it is not yet loaded. */
+						if(texture.video != null && texture.video.readyState < 2 && !texture.video.error) {
+
+							loaded = false;
+							pendingVideo = true;
+						}
 					}
 
 					if(texture != null) {
@@ -2281,6 +2314,9 @@
 						}
 					}
 				});
+
+				if(pendingVideo)
+					material.alpha = 0;
 
 				/* Optional refinements of the surface. */
 				if(data.zOffset != null)
@@ -4975,6 +5011,63 @@
 
 			/*
 
+				A world far larger than a float can place (a planet a hundred
+				million kilometres from its star, a ship a metre from the ground)
+				names the entity the view is at: `world.origin`. The document keeps
+				every position as it is, in numbers with room for it, and each
+				entity at the top of the document is put where it is *relative to
+				that one* by subtraction done here, before the engine ever sees
+				a coordinate too big for it. What is near the viewer is then
+				exact, and what is far is far enough for the error not to show.
+
+			*/
+			let origin = null;
+			{
+				let world = context.resolved.components.find(component => component.type === "world");
+				let reference = world != null && world.data != null ? world.data.origin : null;
+
+				if(reference != null) {
+
+					let wanted = (Array.isArray(reference) ? reference : String(reference).split(".")).join(".");
+					let record = context.resolved.entities.find(entity => entity.path.join(".") === wanted);
+
+					if(record != null && Array.isArray(record.data.position))
+						origin = record.data.position;
+				}
+			}
+
+			context.meta.origin = origin != null ? origin.slice() : null;
+
+			/* the entities it applies to: those with no transform above them, however many packages they are filed under */
+			let byPath = new Map(), topMemo = new Map();
+
+			if(origin != null)
+				context.resolved.entities.forEach(entity => byPath.set(entity.path.join(" "), entity));
+
+			const isTop = record => {
+
+				let key = record.path.join(" ");
+
+				if(topMemo.has(key))
+					return topMemo.get(key);
+
+				let top = true;
+
+				for(let length = 1; length < record.path.length && top; length++) {
+
+					let above = byPath.get(record.path.slice(0, length).join(" "));
+
+					if(above != null && (Array.isArray(above.data.position) || above.data.rotation != null || above.data.scale != null))
+						top = false;
+				}
+
+				topMemo.set(key, top);
+
+				return top;
+			};
+
+			/*
+
 				Bodies and colliders are looked up for every entity every frame, so
 				they are indexed once here rather than searched for.
 
@@ -5143,6 +5236,20 @@
 					}
 				}
 
+				let shifted = false;
+
+				if(origin != null && !driven && isTop(record) && Array.isArray(data.position) &&
+					data.space !== "camera" && data.space !== "screen") {
+
+					node.position.set(
+						data.position[0] - origin[0],
+						data.position[1] - origin[1],
+						data.position[2] - origin[2]
+					);
+
+					shifted = true;
+				}
+
 				context.meta.applied[record.key] = signature;
 
 				node.setEnabled(data.enabled !== false);
@@ -5155,7 +5262,7 @@
 
 				*/
 				if(node.computeWorldMatrix != null)
-					node.computeWorldMatrix(previous !== signature);
+					node.computeWorldMatrix(previous !== signature || shifted);
 
 				/*
 
@@ -5538,6 +5645,9 @@
 	ace.register(operators);
 
 	ace.adapter = adapter;
+
+	/* What was loaded before the adapter existed is started now. */
+	(ace.deferred || []).splice(0).forEach(extension => extension());
 
 	/* The original entry point, preserved. */
 	ace.run = adapter.run;

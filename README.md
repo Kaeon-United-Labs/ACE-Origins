@@ -14,7 +14,7 @@ node serve.mjs       # then open http://localhost:8080/
 Any static file server will do (`python -m http.server` from this folder, for instance). The page needs the internet once
 per load for Babylon.js 7.54.3 (read from the Babylon CDN; the version is pinned on purpose).
 
-Start from the title screen: **New game**, **Continue** (the most recent save) or any slot. The game saves by itself
+The first screen is a title over a film (a slow push in over the sea toward Angaia, `Assets/UI/title.mp4`, with a still picture of it under it, `title.jpg`): any key, a click or a tap goes on to the menu, which has **New game**, **Continue** (the most recent save) or any slot. Both play the title theme. *Return to title* in the pause menu comes back to the first screen, and Esc in the menu does too. The game saves by itself
 (the *Autosave* slot) when a quest moves or something is picked up, and you can save to three slots from the pause menu.
 Saves are kept by the browser, so they stay on the machine and the address you played on.
 
@@ -61,7 +61,7 @@ On a Quest the page starts with the tree and terrain ranges at half and the pict
   and the most recent fell).
 - **Map.** The island, you on it, and the places you have found. Select one and press Enter to **fast travel** there.
 - **People.** Walk up to someone (a prompt appears) and press R. They speak in text and, where the browser has voices, aloud;
-  press R to move through what they say. Maren keeps the camp where you wake. Captain Hale holds the fort across the vale. Pip is at the stones.
+  press R to move through what they say. Maren keeps the camp where you wake. Captain Hale holds the fort across the vale. Pip is at the stones. They are not statues: when nobody is speaking to them Maren, Hale and Pip stroll about near where they live; Pip, if he sees you near, comes to you and speaks first; and **Wren**, who flies as you do over the coast east of the camp, comes to you the first time she sees you. They are solid, as the fish, the sharks and the monsters are: you stop at them and slide along them instead of going through.
 - **Three demo quests.** *Fallen Moonapples* (find three apples that glow in the grass, bring them to Maren), *Echoes of the Stones*
   (touch the Moon Stone, bring Maren its shard) and *Wings Over the Vale* (three bats and a wyrm for Captain Hale).
 

@@ -54,6 +54,7 @@ used as they are, already rigged and animated, with only their textures reduced 
 | `Monsters/Drone.glb`: the sentry drone | `ufo.glb` |
 
 - `Audio/music_menu.mp3` — "Eternal Hope" by Kevin MacLeod (incompetech.com), CC BY 4.0, the title screen's theme.
+- `UI/title.mp4`, `UI/title.jpg` — filmed in the game itself (`Tools/make-title.mjs`), so they carry the licences of what is in the picture: the terrain, the sky and the clouds, all listed above. Wren is the model of Ione (below), flying.
 
 ## The second island
 

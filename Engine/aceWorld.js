@@ -26,6 +26,10 @@
 */
 
 (function(root) {
+	/* The files that add to the adapter may be loaded in any order after ace.js: one that arrives before the adapter
+	   waits for it, and the adapter starts it when it is made. */
+	const extension = function() {
+
 
 	const ace = root.ace;
 	const BABYLON = root.BABYLON;
@@ -302,6 +306,7 @@
 		uniform vec3 grassTint;
 		uniform vec4 rect;
 		uniform vec4 tiles;
+		uniform vec2 fade;
 		uniform sampler2D splat, forestMap;
 		uniform sampler2D grassD, grassN, dirtD, dirtN, rockD, rockN, sandD, sandN, snowD, snowN;
 
@@ -389,7 +394,12 @@
 			col = pow(col, vec3(1.0 / 2.2));
 			col = mix(col, fogColor, clamp(fog, 0.0, 1.0));
 
-			gl_FragColor = vec4(col, 1.0);
+			// far enough away the ground is less and less there, and then not there at all
+			float seen = fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, dist) : 1.0;
+
+			if (seen <= 0.004) discard;
+
+			gl_FragColor = vec4(col, seen);
 		}
 	`;
 
@@ -422,7 +432,7 @@
 				uniforms: [
 					"world", "viewProjection", "camPos", "sunDir", "sunColor",
 					"skyColor", "groundColor", "fogColor", "fogDensity", "exposure", "grassTint",
-					"rect", "tiles"
+					"rect", "tiles", "fade"
 				],
 				samplers: [
 					"splat", "forestMap", "grassD", "grassN", "dirtD", "dirtN", "rockD", "rockN",
@@ -432,6 +442,8 @@
 		);
 
 		material.backFaceCulling = false;
+		material.needAlphaBlending = () => material.blended === true;
+		material.forceDepthWrite = true;      // translucent, it is still a solid surface: the ground behind it does not show through the ground in front
 
 		const texture = (url, repeat) => {
 
@@ -472,6 +484,8 @@
 		let tile = data.tile != null ? data.tile : 6;
 
 		material.setColor3("grassTint", H.color3(data.grassTint, [1, 1, 1]));
+		material.setVector2("fade", Array.isArray(data.fade) && data.fade.length > 1 ?
+			new BABYLON.Vector2(data.fade[0], data.fade[1]) : new BABYLON.Vector2(0, 0));
 		material.setVector4("rect", new BABYLON.Vector4(0, 0, grid.size[0], grid.size[1]));
 		material.setVector4("tiles", new BABYLON.Vector4(
 			tile,
@@ -651,6 +665,7 @@
 
 				object.material = built.material;
 				object.owned = built.owned;
+				object.material.blended = false;
 
 				for(let row = 0; row < down; row++) {
 
@@ -719,6 +734,24 @@
 			material.setFloat("fogDensity",
 				scene.fogMode === BABYLON.Scene.FOGMODE_EXP2 ? scene.fogDensity : 0);
 			material.setFloat("exposure", scene.imageProcessingConfiguration.exposure);
+
+			/* Some of it is further than the fade begins: from here on it is drawn translucent, nearer it is not. */
+			if(Array.isArray(data.fade) && data.fade.length > 1 && object.grid != null) {
+
+				let centre = object.node.absolutePosition;
+				let reach = Math.hypot(
+					Math.abs(eye.x - centre.x) + object.grid.size[0] / 2,
+					Math.abs(eye.z - centre.z) + object.grid.size[1] / 2
+				);
+
+				object.blended = reach > data.fade[0];
+
+			} else {
+
+				object.blended = false;
+			}
+
+			material.blended = object.blended;
 
 			let sun = null;
 			let sky = null;
@@ -847,6 +880,7 @@
 					chunk.mesh.parent = object.node;
 					chunk.mesh.material = material;
 					chunk.mesh.receiveShadows = false;
+					chunk.mesh.alphaIndex = 1;      // translucent, it is drawn before the sea (which is 5) and after what is behind it
 
 					H.own(chunk.mesh, instance.entityKey);
 				}
@@ -1861,6 +1895,8 @@
 		uniform vec4 hinfo;
 		uniform vec4 rect2;
 		uniform vec4 hinfo2;
+		uniform vec2 fadeA, fadeB;
+		uniform float under;
 		uniform sampler2D heightMap, heightMap2, normA, normB;
 		uniform samplerCube sky;
 
@@ -1897,6 +1933,17 @@
 			return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 		}
 
+		// how much of an island is to be seen from here (the ground itself fades out by the same rule, far off): 1 whole, 0 gone
+		float seenAt(vec2 xz, float dist) {
+			vec2 uv = vec2(0.5 + (xz.x - rect.x) / rect.z, 0.5 + (xz.y - rect.y) / rect.w);
+			if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0)
+				return fadeA.y > fadeA.x ? 1.0 - smoothstep(fadeA.x, fadeA.y, dist) : 1.0;
+			vec2 uw = vec2(0.5 + (xz.x - rect2.x) / rect2.z, 0.5 + (xz.y - rect2.y) / rect2.w);
+			if (rect2.z > 0.0 && uw.x >= 0.0 && uw.y >= 0.0 && uw.x <= 1.0 && uw.y <= 1.0)
+				return fadeB.y > fadeB.x ? 1.0 - smoothstep(fadeB.x, fadeB.y, dist) : 1.0;
+			return 1.0;
+		}
+
 		void main(void) {
 			vec3 toEye = camPos - vWorld;
 			float dist = length(toEye);
@@ -1919,7 +1966,21 @@
 				// ---- from above
 				float elev = elevAt(xz);
 				float depth = level - elev;
-				if (depth < -0.3) discard;
+				float seen = seenAt(xz, dist);
+
+				if (under > 0.5) {
+
+					// the sheet laid under the islands: open sea, where there is land that is fading out, so that what shows through it is sea
+					if (depth > 0.12 || seen > 0.995) discard;
+					depth = 70.0;
+
+				} else {
+
+					if (depth < -0.3) discard;
+
+					// far off, the shoals and the surf of an island go with it
+					depth = mix(70.0, depth, seen);
+				}
 
 				float shoal = 1.0 - exp(-max(depth, 0.0) * 0.07);
 				vec3 body = mix(shallowColor, deepColor, shoal);
@@ -1948,6 +2009,7 @@
 				alpha *= smoothstep(-0.3, 0.12, depth);
 			} else {
 				// ---- from below: a window of sky, then only water
+				if (under > 0.5) discard;
 				vec3 up = -V;
 				up.xz += slope * 0.35;
 				up = normalize(up);
@@ -2007,7 +2069,7 @@
 					uniforms: [
 						"world", "viewProjection", "camPos", "sunDir", "sunColor", "fogColor",
 						"fogDensity", "time", "level", "shallowColor", "deepColor", "underColor",
-						"rect", "hinfo", "rect2", "hinfo2"
+						"rect", "hinfo", "rect2", "hinfo2", "fadeA", "fadeB", "under"
 					],
 					samplers: ["heightMap", "heightMap2", "normA", "normB", "sky"]
 				}
@@ -2017,6 +2079,7 @@
 			material.disableDepthWrite = true;
 			material.needAlphaBlending = () => true;
 			mesh.material = material;
+			material.setFloat("under", 0);
 
 			let layers = isObject(data.layers) ? data.layers : { };
 			let terrain = isObject(data.terrain) ? data.terrain : { };
@@ -2079,7 +2142,7 @@
 
 					texture.wrapU = texture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
 					owned.push(texture);
-					material.setTexture(sampler, texture);
+					[material].concat((object.sheets || []).map(entry => entry.material)).forEach(each => each.setTexture(sampler, texture));
 					sized.push(decoded.exact);
 				}).catch(error => context.errors.push({ type: "water", hook: sampler, message: error.message }));
 			};
@@ -2122,7 +2185,49 @@
 			material.setColor3("deepColor", H.color3(data.deep, [0.01, 0.12, 0.24]));
 			material.setColor3("underColor", H.color3(data.under, [0.02, 0.2, 0.32]));
 
+			const span = value => Array.isArray(value) && value.length > 1 ? new BABYLON.Vector2(value[0], value[1]) : new BABYLON.Vector2(0, 0);
+
+			material.setVector2("fadeA", span(terrain.fade));
+			material.setVector2("fadeB", second != null ? span(second.fade) : span(null));
+
 			object.mesh = mesh; object.material = material; object.owned = owned; object.node = node;
+			object.sheets = [];
+
+			/*
+
+				Where an island fades with distance, the sea is laid under it as well: a flat sheet of open sea over the whole of the island's map, drawn
+				before the island is, so that what the fading ground lets through is sea and not the sky behind it.
+
+			*/
+			const sheet = (map, index) => {
+
+				if(map == null || !Array.isArray(map.fade) || map.fade.length < 2)
+					return;
+
+				node.computeWorldMatrix(true);
+
+				let at = Array.isArray(map.center) ? map.center : [0, 0];
+				let flat = BABYLON.MeshBuilder.CreateGround(name + ".sheet" + index, { width: map.size, height: map.size, subdivisions: 1 }, scene);
+
+				flat.parent = node;
+				flat.position.set(at[0] - node.absolutePosition.x, 0.02, at[1] - node.absolutePosition.z);
+				flat.isPickable = false;
+				flat.alphaIndex = 0;
+				H.own(flat, instance.entityKey);
+
+				/* a copy of the sea's own material that is told it is the sheet; its textures and colours are the same ones */
+				let copy = material.clone(name + ".sheet" + index + ".material");
+
+				copy.backFaceCulling = false;
+				copy.disableDepthWrite = true;
+				copy.needAlphaBlending = () => true;
+				copy.setFloat("under", 1);
+				flat.material = copy;
+				object.sheets.push({ mesh: flat, material: copy });
+			};
+
+			sheet(terrain.fade != null ? Object.assign({ center: middle, size: extent }, { fade: terrain.fade }) : null, 0);
+			sheet(second, 1);
 
 			return object;
 		},
@@ -2137,22 +2242,24 @@
 				return;
 
 			let env = environment(scene);
-			let material = object.material;
 
 			object.node.computeWorldMatrix(true);
 
-			material.setVector3("camPos", camera.globalPosition);
-			material.setVector3("sunDir", env.sunDir);
-			material.setColor3("sunColor", env.sunColor);
-			material.setColor3("fogColor", env.fogColor);
-			material.setFloat("fogDensity", env.fogDensity);
-			material.setFloat("time", (root.performance.now() % 3600000) / 1000);
-			material.setFloat("level", object.node.absolutePosition.y);
+			[object.material].concat(object.sheets.map(entry => entry.material)).forEach(material => {
 
-			let sky = scene.environmentTexture;
+				material.setVector3("camPos", camera.globalPosition);
+				material.setVector3("sunDir", env.sunDir);
+				material.setColor3("sunColor", env.sunColor);
+				material.setColor3("fogColor", env.fogColor);
+				material.setFloat("fogDensity", env.fogDensity);
+				material.setFloat("time", (root.performance.now() % 3600000) / 1000);
+				material.setFloat("level", object.node.absolutePosition.y);
 
-			if(sky != null)
-				material.setTexture("sky", sky);
+				let sky = scene.environmentTexture;
+
+				if(sky != null)
+					material.setTexture("sky", sky);
+			});
 		},
 
 		onChange: (context, instance) => {
@@ -2164,6 +2271,7 @@
 		onDestroy: (context, instance) => {
 
 			instance.object.disposed = true;
+			instance.object.sheets.forEach(entry => { entry.mesh.dispose(); entry.material.dispose(); });
 			instance.object.owned.forEach(texture => texture.dispose());
 			instance.object.material.dispose();
 			instance.object.mesh.dispose();
@@ -2596,5 +2704,221 @@
 	};
 
 	ace.register([terrain, scatter, particles, speech, storage, water, clouds]);
+
+	/* ================================================================ boot
+
+		What a document wants of the page that runs it, it says itself, in the world's settings (`boot`, §2.3.1), and `ace.run` sees to it:
+		the title of the page, the fonts that text is to be drawn in (text is drawn once, in whatever face is there when it is drawn), the
+		physics that has to be fetched before the world is made, and a cover that stays solid until the world has been made. The page that
+		hosts a document is therefore nothing but a stage, the engine files and a call to `ace.run`.
+
+		The address can ask for a lighter picture, which belongs to the machine and not to the document:
+			?detail=0.6    pulls the ranges of terrain and scatter in to 60% (a headset does this by itself, to half)
+			?xrscale=0.8   the fraction of a headset's own resolution to draw at (0.7 by itself, on a Quest)
+			?post=0        no final image pass
+			?physics=off   no character collision
+	*/
+
+	const run = ace.run;
+
+	const loadScript = source => new Promise(resolve => {
+
+		let element = root.document.createElement("script");
+
+		element.src = source;
+		element.onload = element.onerror = () => resolve();
+		root.document.head.appendChild(element);
+	});
+
+	const make = (tag, css, text) => {
+
+		let element = root.document.createElement(tag);
+
+		if(css) element.style.cssText = css;
+		if(text) element.textContent = text;
+
+		return element;
+	};
+
+	/* Every component, wherever it is in the document. */
+	const each = (entity, visit) => {
+
+		Object.keys(entity.utilities || { }).forEach(name => visit(entity.utilities[name]));
+		Object.keys(entity.packages || { }).forEach(name => each(entity.packages[name], visit));
+	};
+
+	ace.run = (selector, scene) => {
+
+		const params = new root.URLSearchParams(root.location != null ? root.location.search : "");
+		const settings = (((scene.packages || { }).world || { }).utilities || { }).settings;
+		const data = settings != null && settings.properties != null && settings.properties.data != null ? settings.properties.data : { };
+		const boot = isObject(data.boot) ? data.boot : { };
+		const quest = /OculusBrowser|Quest/i.test(root.navigator != null ? root.navigator.userAgent : "");
+
+		if(boot.title && root.document != null)
+			root.document.title = boot.title;
+
+		/* the lighter picture, made by changing what is about to be run */
+		if(params.get("post") === "0" && isObject(data.post))
+			delete data.post.finish;
+
+		const xrscale = parseFloat(params.get("xrscale")) || (quest ? 0.7 : null);
+		const detail = params.has("detail") ? parseFloat(params.get("detail")) : (quest ? 0.5 : 1);
+
+		each(scene, component => {
+
+			let tags = (component.properties || { }).tags || [];
+			let own = (component.properties || { }).data;
+
+			if(own == null)
+				return;
+
+			if(xrscale && tags[0] === "camera" && isObject(own.xr))
+				own.xr.scale = xrscale;
+
+			if(detail > 0 && detail !== 1 && (tags[0] === "scatter" || tags[0] === "terrain") && Array.isArray(own.lods))
+				own.lods.forEach(level => { if(level.range < 1e8) level.range *= detail; });
+		});
+
+		/* the cover */
+		let overlay = null, bar = null, status = null;
+		const cover = isObject(boot.loading) ? boot.loading : null;
+
+		if(cover != null) {
+
+			overlay = make("div", "position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;letter-spacing:.1em;line-height:1.1;font-weight:700;font-size:clamp(28px,5vw,64px);" +
+				"background:" + (cover.background || "#000") + ";color:" + (cover.color || "#fff") + ";font-family:" + (cover.titleFont ? "\"" + cover.titleFont + "\"," : "") + "serif", cover.title || "");
+
+			let track = make("div", "width:min(320px,60vw);height:3px;margin-top:1em;border-radius:2px;overflow:hidden;background:" + (cover.track || "#333"));
+
+			bar = make("div", "height:100%;width:0;transition:width .3s;background:" + (cover.bar || cover.color || "#fff"));
+			track.appendChild(bar);
+
+			status = make("small", "font-weight:400;font-size:15px;line-height:1.5;letter-spacing:.08em;margin-top:1.4em;color:" + (cover.muted || cover.color || "#aaa") + ";font-family:" +
+				(cover.bodyFont ? "\"" + cover.bodyFont + "\"," : "") + "system-ui,sans-serif", cover.status || "");
+
+			overlay.appendChild(track);
+			overlay.appendChild(status);
+			overlay.id = "loading";
+			root.document.body.appendChild(overlay);
+		}
+
+		/* The world is made at once, and held still until what it needs has arrived. */
+		const context = run(selector, scene);
+
+		context.running = false;
+		root.origins = root.angaia = root.ace_context = context;
+
+		if(root.addEventListener != null)
+			root.addEventListener("contextmenu", event => event.preventDefault());
+
+		context.booting = (async () => {
+
+			await Promise.all((Array.isArray(boot.fonts) ? boot.fonts : []).map(font => {
+
+				try {
+
+					let face = new root.FontFace(font.family, "url(" + font.src + ")", { weight: font.weight || "400" });
+
+					return face.load().then(loaded => root.document.fonts.add(loaded)).catch(() => { });
+
+				} catch(error) {
+
+					return null;
+				}
+			}));
+
+			if(data.gravity != null && root.CANNON === undefined)
+				await loadScript("https://cdn.babylonjs.com/cannon.js");
+
+			/* a document that asks for Havok gets it; if it cannot be had the document keeps to what it did without */
+			if(data.physics === "character" && params.get("physics") !== "off" && root.havokInstance == null) {
+
+				await loadScript("https://cdn.babylonjs.com/havok/HavokPhysics_umd.js");
+
+				try {
+
+					root.havokInstance = await root.HavokPhysics();
+
+				} catch(error) {
+
+					root.console.warn("Havok did not load: " + error.message);
+				}
+			}
+
+			context.running = true;
+
+			if(overlay == null)
+				return context;
+
+			/*
+				The cover stays solid until the world is made: the terrain (if there is one) is there, every model and texture has arrived,
+				nothing is waiting to be built, and that has held for a moment.
+			*/
+			const started = root.performance.now();
+			const minimum = (cover.minimum != null ? cover.minimum : 3) * 1000;
+			const timeout = (cover.timeout != null ? cover.timeout : 60) * 1000;
+
+			let quiet = 0;
+
+			const timer = root.setInterval(() => {
+
+				let total = 0, done = 0, waiting = 0;
+
+				Object.keys(context.state).forEach(id => {
+
+					let st = context.state[id];
+
+					if(st == null || typeof st !== "object")
+						return;
+
+					if(st.loaded !== undefined) {
+
+						total++;
+
+						if(st.loaded === true) done++;
+						else waiting++;
+					}
+
+					if(st.queued > 0) waiting++;
+					if(st.error) status.textContent = "problem: " + st.error;
+				});
+
+				let terrainRecord = context.resolved.components.find(component => component.type === "terrain");
+				let terrainState = terrainRecord != null && context.instances[ace.identity(terrainRecord)] ? context.state[ace.identity(terrainRecord)] : null;
+				let ready = (terrainRecord == null || (terrainState != null && terrainState.loaded)) && context.frame > 120 && waiting === 0;
+
+				quiet = ready ? quiet + 1 : 0;
+
+				if(total > 0)
+					bar.style.width = Math.round(100 * done / total) + "%";
+
+				if(!status.textContent.startsWith("problem"))
+					status.textContent = ready ? (cover.ready || "") : (cover.status || "") + (cover.status ? "  " : "") + done + " of " + total;
+
+				if((quiet >= 8 && root.performance.now() - started > minimum) || root.performance.now() - started > timeout) {
+
+					overlay.style.transition = "opacity 1.2s";
+					overlay.style.opacity = 0;
+					root.clearInterval(timer);
+					root.setTimeout(() => overlay.remove(), 1400);
+				}
+
+			}, 250);
+
+			return context;
+		})();
+
+		return context;
+	};
+
+
+	};
+
+	/* (`ace.adapter` is an empty object until the operators make the real one: it is the helpers that say it is there) */
+	if(root.ace.adapter != null && root.ace.adapter.helpers != null)
+		extension();
+	else
+		(root.ace.deferred = root.ace.deferred || []).push(extension);
 
 })(typeof globalThis !== "undefined" ? globalThis : this);

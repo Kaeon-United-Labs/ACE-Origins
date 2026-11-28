@@ -1,107 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>ACE</title>
-	<link rel="icon" href="data:,">
-	<style>
-		html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-		#stage { position: absolute; inset: 0; }
-	</style>
-</head>
-<body>
-	<div id="stage"></div>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>ACE</title>
+		<style>
+			html, body { margin: 0; height: 100%; background: black; overflow: hidden; }
+			#stage { position: absolute; inset: 0; }
+		</style>
+	</head>
+	<body>
 
-	<script src="https://cdn.babylonjs.com/v7.54.3/babylon.js"></script>
-	<script src="https://cdn.babylonjs.com/v7.54.3/loaders/babylonjs.loaders.min.js"></script>
-	<script src="Engine/ace.js"></script>
-	<script src="Engine/aceOperators.js"></script>
-	<script src="Engine/aceWorld.js"></script>
-	<script src="Engine/aceHavok.js"></script>
-	<script>
-		// A page that runs any ACE document: ?game=file.json names it (default "ACE Origins.json"). Nothing here belongs to one game.
-		// What a document wants of its page it says itself, in world.settings.data.boot:
-		//   title    the page's title
-		//   fonts    [{ family, src, weight }], loaded before the world is made (text in the world is drawn once, in whatever face is there then)
-		//   loading  a cover shown until the world is made. { title, status, ready, background, color, muted, track, bar, titleFont, bodyFont, minimum, timeout }
-		//            absent: no cover, the document just starts
-		// Physics (cannon.js, or the collision engine for characters when world.physics says "character") is fetched only for a document that asks for gravity, which is when the adapter would use it.
-		const params = new URLSearchParams(location.search);
-		const load = src => new Promise(resolve => { const s = document.createElement("script"); s.src = src; s.onload = s.onerror = () => resolve(); document.head.appendChild(s); });
-		const make = (tag, css, text) => { const e = document.createElement(tag); if (css) e.style.cssText = css; if (text) e.textContent = text; return e; };
+		<div id="stage"></div>
 
-		fetch(params.get("game") || "ACE Origins.json").then(response => response.json()).then(async scene => {
-			const settings = (((scene.packages || {}).world || {}).utilities || {}).settings;
-			const data = settings && settings.properties && settings.properties.data ? settings.properties.data : {};
-			const boot = data.boot || {};
-			if (boot.title) document.title = boot.title;
+		<script src="https://cdn.babylonjs.com/v7.54.3/babylon.js"></script>
+		<script src="https://cdn.babylonjs.com/v7.54.3/loaders/babylonjs.loaders.min.js"></script>
+		<script src="Engine/ace.js"></script>
+		<script src="Engine/aceHavok.js"></script>
+		<script src="Engine/aceOperators.js"></script>
+		<script src="Engine/aceSpace.js"></script>
+		<script src="Engine/aceWorld.js"></script>
 
-			await Promise.all((boot.fonts || []).map(f => { try { const face = new FontFace(f.family, "url(" + f.src + ")", { weight: f.weight || "400" }); return face.load().then(l => document.fonts.add(l)).catch(() => { }); } catch (e) { return null; } }));
-			if (data.gravity != null && typeof CANNON === "undefined") await load("https://cdn.babylonjs.com/cannon.js");
-			// a document that asks for Havok (world.physics) gets it; if it cannot be had the document keeps to what it did without
-			if (data.physics === "character" && params.get("physics") !== "off") {
-				await load("https://cdn.babylonjs.com/havok/HavokPhysics_umd.js");
-				try { window.havokInstance = await HavokPhysics(); } catch (e) { console.warn("Havok did not load: " + e.message); }
-			}
+		<script>
 
-			// the cover, if the document asks for one
-			let overlay = null, bar = null, status = null;
-			const L = boot.loading;
-			if (L) {
-				overlay = make("div", "position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;letter-spacing:.1em;line-height:1.1;font-weight:700;font-size:clamp(28px,5vw,64px);" +
-					"background:" + (L.background || "#000") + ";color:" + (L.color || "#fff") + ";font-family:" + (L.titleFont ? '"' + L.titleFont + '",' : "") + "serif", L.title || "");
-				const track = make("div", "width:min(320px,60vw);height:3px;margin-top:1em;border-radius:2px;overflow:hidden;background:" + (L.track || "#333"));
-				bar = make("div", "height:100%;width:0;transition:width .3s;background:" + (L.bar || L.color || "#fff"));
-				track.appendChild(bar);
-				status = make("small", "font-weight:400;font-size:15px;line-height:1.5;letter-spacing:.08em;margin-top:1.4em;color:" + (L.muted || L.color || "#aaa") + ";font-family:" + (L.bodyFont ? '"' + L.bodyFont + '",' : "") + "system-ui,sans-serif", L.status || "");
-				overlay.appendChild(track); overlay.appendChild(status);
-				overlay.id = "loading"; document.body.appendChild(overlay);
-			}
+			fetch("ACE Origins.json").then(response => response.json()).then(scene => {
+				ace.run("#stage", scene);
+			});
 
-			// a slower machine, or a headset (which draws everything twice and has a small GPU), pulls every tree and terrain range in: ?detail= and ?xrscale= override
-			const quest = /OculusBrowser|Quest/i.test(navigator.userAgent);
-			if (params.get("post") === "0") { try { delete data.post.finish; } catch (e) { } }
-			const camera = (((scene.packages.player || {}).packages || {}).head || {}).utilities;
-			const xrscale = parseFloat(params.get("xrscale")) || (quest ? 0.7 : null);
-			if (xrscale && camera && camera.camera && camera.camera.properties.data.xr) camera.camera.properties.data.xr.scale = xrscale;
-			const detail = params.has("detail") ? parseFloat(params.get("detail")) : (quest ? 0.5 : 1);
-			if (detail > 0 && detail !== 1) {
-				const scale = lods => lods.forEach(l => { if (l.range < 1e8) l.range *= detail; });
-				const walk = pkg => { Object.values(pkg.utilities || {}).forEach(u => { const d = u.properties && u.properties.data; if (d && Array.isArray(d.lods) && (u.properties.tags || []).some(t => t === "scatter" || t === "terrain")) scale(d.lods); }); Object.values(pkg.packages || {}).forEach(walk); };
-				walk(scene);
-			}
+		</script>
 
-			const context = ace.run("#stage", scene);
-			window.origins = window.angaia = window.ace_context = context;
-			window.addEventListener("contextmenu", event => event.preventDefault());
-			if (!overlay) return;
+		<!-- FOR AI ENHANCED VISUALS
 
-			// The cover stays solid until the world is made: the terrain (if there is one) is there, every model and texture has arrived, nothing is waiting
-			// to be built, and that has held for a moment. Until then the player sees this and nothing of the world.
-			const started = performance.now(), minimum = (L.minimum != null ? L.minimum : 3) * 1000, timeout = (L.timeout != null ? L.timeout : 60) * 1000;
-			let quiet = 0;
-			const timer = setInterval(() => {
-				let total = 0, done = 0, waiting = 0;
-				for (const id of Object.keys(context.state)) {
-					const st = context.state[id];
-					if (!st || typeof st !== "object") continue;
-					if (st.loaded !== undefined) { total++; if (st.loaded === true) done++; else waiting++; }
-					if (st.queued > 0) waiting++;
-					if (st.error) status.textContent = "problem: " + st.error;
-				}
-				const terrain = context.resolved.components.find(c => c.type === "terrain");
-				const tState = terrain && context.instances[ace.identity(terrain)] ? context.state[ace.identity(terrain)] : null;
-				const ready = (!terrain || (tState && tState.loaded)) && context.frame > 120 && waiting === 0;
-				quiet = ready ? quiet + 1 : 0;
-				if (total > 0) bar.style.width = Math.round(100 * done / total) + "%";
-				if (!status.textContent.startsWith("problem")) status.textContent = ready ? (L.ready || "") : (L.status || "") + (L.status ? "  " : "") + done + " of " + total;
-				if ((quiet >= 8 && performance.now() - started > minimum) || performance.now() - started > timeout) {
-					overlay.style.transition = "opacity 1.2s"; overlay.style.opacity = 0; clearInterval(timer);
-					setTimeout(() => overlay.remove(), 1400);
-				}
-			}, 250);
-		});
-	</script>
-</body>
+		<script type="module"> import { createDecartClient, models } from "https://esm.sh/@decartai/sdk"; window.decartai = { createDecartClient, models }; </script>
+		<script src="ace-stylize.js"></script>
+
+		<script>
+			
+			let inverval = setInterval(() => {
+
+				if(document.querySelector("canvas") == null)
+					return;
+
+				AceStylize.attach(document.querySelector("canvas"), {
+					backend: "lucy", // "lucy" | "streamdiffusion" | "off" (default)
+					apiKey: "YOUR_API_KEY", // FOR DECART LUCY API
+					endpoint: null, // FOR LOCAL STREAM DIFFUSION MODEL
+					prompt: null,
+					panel: true,
+					autoStart: false
+				});
+
+				clearInterval(inverval);
+			});
+			
+		</script>
+
+		-->
+
+	</body>
 </html>
